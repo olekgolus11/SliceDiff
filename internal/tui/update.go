@@ -72,10 +72,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleMouseClick(msg.Mouse())
 		return m.synced(spinnerCmd)
 	case tea.MouseWheelMsg:
-		m.handleMouseWheel(msg.Mouse())
-		return m.synced(spinnerCmd)
+		if m.handleMouseWheel(msg.Mouse()) {
+			return m.synced(spinnerCmd)
+		}
+		return m, spinnerCmd
 	case spinner.TickMsg:
-		return m.synced(spinnerCmd)
+		return m, spinnerCmd
 	}
 	return m.synced(spinnerCmd)
 }
@@ -341,14 +343,20 @@ func (m *Model) handleMouseClick(mouse tea.Mouse) {
 	if m.stage != stageReady {
 		return
 	}
+	if p, ok := m.panelAtMouse(mouse); ok {
+		m.focus = p
+	}
+}
+
+func (m Model) panelAtMouse(mouse tea.Mouse) (panel, bool) {
 	headerHeight := lipglossHeight(m.renderHeader())
 	if mouse.Y < headerHeight {
-		return
+		return panelLeft, false
 	}
 	bodyHeight := max(1, m.height-headerHeight-lipglossHeight(m.renderFooter()))
 	relY := mouse.Y - headerHeight
 	if relY >= bodyHeight {
-		return
+		return panelLeft, false
 	}
 	if shouldStack(m.width, bodyHeight) {
 		total := max(9, bodyHeight)
@@ -356,34 +364,96 @@ func (m *Model) handleMouseClick(mouse tea.Mouse) {
 		mid := total / 3
 		switch {
 		case relY < top:
-			m.focus = panelLeft
+			return panelLeft, true
 		case relY < top+mid:
-			m.focus = panelCenter
+			return panelCenter, true
 		default:
-			m.focus = panelRight
+			return panelRight, true
 		}
-		return
 	}
 	leftW, centerW, _ := weightedWidths(m.width, []int{1, 2, 2})
 	switch {
 	case mouse.X < leftW:
-		m.focus = panelLeft
+		return panelLeft, true
 	case mouse.X < leftW+centerW:
-		m.focus = panelCenter
+		return panelCenter, true
 	default:
-		m.focus = panelRight
+		return panelRight, true
 	}
 }
 
-func (m *Model) handleMouseWheel(mouse tea.Mouse) {
+func (m *Model) handleMouseWheel(mouse tea.Mouse) bool {
 	if m.stage != stageReady {
-		return
+		return false
 	}
+	target, ok := m.panelAtMouse(mouse)
+	if !ok {
+		return false
+	}
+	m.focus = target
+
+	direction := 0
 	switch mouse.Button {
 	case tea.MouseWheelUp:
-		m.pageFocused(-1)
+		direction = -1
 	case tea.MouseWheelDown:
-		m.pageFocused(1)
+		direction = 1
+	default:
+		return false
+	}
+
+	delta := m.dampenedWheelDelta(target, direction)
+	if delta == 0 {
+		return false
+	}
+	return m.scrollPanelByMouse(target, delta)
+}
+
+func (m *Model) scrollPanelByMouse(target panel, delta int) bool {
+	switch target {
+	case panelLeft:
+		m.moveSelection(delta)
+		return true
+	case panelCenter:
+		if delta > 0 {
+			m.centerViewport.ScrollDown(delta)
+		} else {
+			m.centerViewport.ScrollUp(-delta)
+		}
+	case panelRight:
+		if delta > 0 {
+			m.rightViewport.ScrollDown(delta)
+		} else {
+			m.rightViewport.ScrollUp(-delta)
+		}
+	}
+	return false
+}
+
+func (m *Model) dampenedWheelDelta(target panel, direction int) int {
+	if target != m.wheelTarget || direction != m.wheelDirection {
+		m.wheelTarget = target
+		m.wheelDirection = direction
+		m.wheelRemainder = 0
+	}
+
+	threshold := wheelDampenThreshold(target)
+	m.wheelRemainder += direction
+	if abs(m.wheelRemainder) < threshold {
+		return 0
+	}
+
+	delta := m.wheelRemainder / threshold
+	m.wheelRemainder -= delta * threshold
+	return delta
+}
+
+func wheelDampenThreshold(target panel) int {
+	switch target {
+	case panelRight:
+		return 2
+	default:
+		return 4
 	}
 }
 
@@ -503,6 +573,13 @@ func clamp(v, min, max int) int {
 	}
 	if v > max {
 		return max
+	}
+	return v
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
 	}
 	return v
 }

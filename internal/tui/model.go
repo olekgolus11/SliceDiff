@@ -30,11 +30,14 @@ type Model struct {
 	pr     *github.PullRequest
 	slices *agent.SliceSet
 
-	selectedSlice int
-	selectedFile  int
-	selectedHunk  int
-	selectedSetup int
-	showHelp      bool
+	selectedSlice  int
+	selectedFile   int
+	selectedHunk   int
+	selectedSetup  int
+	showHelp       bool
+	wheelTarget    panel
+	wheelDirection int
+	wheelRemainder int
 
 	leftList       list.Model
 	centerViewport viewport.Model

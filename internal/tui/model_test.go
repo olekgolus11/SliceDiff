@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
@@ -300,6 +301,117 @@ func TestCenterPanelLineKeysStillMoveSelectedHunk(t *testing.T) {
 	if got.selectedHunk != 1 {
 		t.Fatalf("expected center j to move selected hunk, got %d", got.selectedHunk)
 	}
+}
+
+func TestMouseWheelScrollsDiffByTwoLinesPerTerminalNotch(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelLeft
+	m.selectedHunk = 1
+	m.rightViewport.SetHeight(2)
+	m.rightViewport.SetContentLines([]string{"one", "two", "three", "four", "five", "six"})
+
+	for i := 0; i < 4; i++ {
+		needsSync := m.handleMouseWheel(tea.Mouse{X: 90, Y: 3, Button: tea.MouseWheelDown})
+		if needsSync {
+			t.Fatal("expected diff wheel scroll to preserve viewport state without full sync")
+		}
+	}
+	if m.focus != panelRight {
+		t.Fatalf("expected wheel over diff to focus right panel, got %v", m.focus)
+	}
+	if got := m.rightViewport.YOffset(); got != 2 {
+		t.Fatalf("expected wheel down to scroll diff by 2 lines per terminal notch, got %d", got)
+	}
+	if m.selectedHunk != 1 {
+		t.Fatalf("expected selected hunk unchanged, got %d", m.selectedHunk)
+	}
+
+	for i := 0; i < 4; i++ {
+		m.handleMouseWheel(tea.Mouse{X: 90, Y: 3, Button: tea.MouseWheelUp})
+	}
+	if got := m.rightViewport.YOffset(); got != 0 {
+		t.Fatalf("expected wheel up to scroll diff back by 2 lines per terminal notch, got %d", got)
+	}
+}
+
+func TestMouseWheelScrollsSlicesPanelUnderCursor(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelRight
+	m.selectedSlice = 0
+	m.selectedHunk = 1
+
+	needsSync := false
+	for i := 0; i < 4; i++ {
+		needsSync = m.handleMouseWheel(tea.Mouse{X: 2, Y: 3, Button: tea.MouseWheelDown}) || needsSync
+	}
+	if !needsSync {
+		t.Fatal("expected slices wheel movement to request full sync")
+	}
+	if m.focus != panelLeft {
+		t.Fatalf("expected wheel over slices to focus left panel, got %v", m.focus)
+	}
+	if m.selectedSlice != 1 {
+		t.Fatalf("expected wheel down to move slices by 1 row, got %d", m.selectedSlice)
+	}
+	if m.selectedHunk != 0 {
+		t.Fatalf("expected slice wheel movement to reset selected hunk, got %d", m.selectedHunk)
+	}
+}
+
+func TestMouseWheelScrollsHunksPanelUnderCursor(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelRight
+	m.selectedHunk = 1
+	m.centerViewport.SetHeight(2)
+	m.centerViewport.SetContentLines([]string{"Hunks", "h1", "h2", "h3", "h4", "h5"})
+
+	for i := 0; i < 4; i++ {
+		needsSync := m.handleMouseWheel(tea.Mouse{X: 30, Y: 3, Button: tea.MouseWheelDown})
+		if needsSync {
+			t.Fatal("expected hunks wheel scroll to preserve viewport state without full sync")
+		}
+	}
+	if m.focus != panelCenter {
+		t.Fatalf("expected wheel over hunks to focus center panel, got %v", m.focus)
+	}
+	if got := m.centerViewport.YOffset(); got != 1 {
+		t.Fatalf("expected wheel down to scroll hunks by 1 line, got %d", got)
+	}
+	if m.selectedHunk != 1 {
+		t.Fatalf("expected selected hunk unchanged, got %d", m.selectedHunk)
+	}
+}
+
+func TestMouseWheelUpdateDoesNotSnapHunksViewportBackToSelectedHunk(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelRight
+	m.selectedHunk = 1
+	m.centerViewport.SetHeight(2)
+	m.centerViewport.SetContentLines([]string{"Hunks", "h1", "h2", "h3", "h4", "h5"})
+
+	got := m
+	for i := 0; i < 4; i++ {
+		got = updateModel(got, tea.MouseWheelMsg(tea.Mouse{X: 30, Y: 3, Button: tea.MouseWheelDown}))
+	}
+	got = updateModel(got, spinner.TickMsg{})
+	if got.focus != panelCenter {
+		t.Fatalf("expected wheel over hunks to focus center panel, got %v", got.focus)
+	}
+	if offset := got.centerViewport.YOffset(); offset != 1 {
+		t.Fatalf("expected update wheel path to preserve hunks scroll offset 1, got %d", offset)
+	}
+	if got.selectedHunk != 1 {
+		t.Fatalf("expected selected hunk unchanged, got %d", got.selectedHunk)
+	}
+}
+
+func updateModel(m Model, msg tea.Msg) Model {
+	model, _ := m.Update(msg)
+	return model.(Model)
 }
 
 func testModel() Model {
