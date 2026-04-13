@@ -101,11 +101,25 @@ func runCodex(ctx context.Context, opts Options, prompt []byte) ([]byte, error) 
 	}
 	defer cleanup()
 
-	args := []string{"exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", schemaPath, "-"}
+	outputPath, outputCleanup, err := reserveTempPath("slicediff-codex-output-*.json")
+	if err != nil {
+		return nil, err
+	}
+	defer outputCleanup()
+
+	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "-"}
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Dir = opts.WorkDir
 	cmd.Stdin = bytes.NewReader(prompt)
-	return combinedOutput(cmd, "codex "+strings.Join(args, " "))
+	stdout, err := combinedOutput(cmd, "codex "+strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	out, err := os.ReadFile(outputPath)
+	if err == nil && len(bytes.TrimSpace(out)) > 0 {
+		return out, nil
+	}
+	return stdout, nil
 }
 
 func runOpenCode(ctx context.Context, opts Options, prompt []byte) ([]byte, error) {
@@ -158,7 +172,7 @@ func writeSchemaFile() (string, func(), error) {
   "additionalProperties": false,
   "required": ["schema_version", "runner", "prompt_version", "pr_head_sha", "slices", "unassigned_hunks", "warnings"],
   "properties": {
-    "schema_version": {"const": "slicediff.slice.v1"},
+    "schema_version": {"type": "string", "const": "slicediff.slice.v1"},
     "runner": {"type": "string"},
     "prompt_version": {"type": "string"},
     "pr_head_sha": {"type": "string"},
@@ -214,6 +228,23 @@ func writeTempPayload(pattern string, payload []byte) (string, func(), error) {
 		os.Remove(path)
 		return "", func() {}, err
 	}
+	if err := file.Close(); err != nil {
+		os.Remove(path)
+		return "", func() {}, err
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	return abs, func() { _ = os.Remove(abs) }, nil
+}
+
+func reserveTempPath(pattern string) (string, func(), error) {
+	file, err := os.CreateTemp(os.TempDir(), pattern)
+	if err != nil {
+		return "", func() {}, err
+	}
+	path := file.Name()
 	if err := file.Close(); err != nil {
 		os.Remove(path)
 		return "", func() {}, err

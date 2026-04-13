@@ -142,18 +142,19 @@ func (m Model) leftLines() []string {
 }
 
 func (m Model) centerLines() []string {
+	prefix := m.errorLines()
 	if m.mode == modeGrouped && m.slices != nil {
 		slice := m.currentSlice()
 		if slice == nil {
-			return []string{"No selected slice."}
+			return append(prefix, "No selected slice.")
 		}
-		lines := []string{
+		lines := append(prefix, []string{
 			"Title: " + slice.Title,
 			"Category: " + slice.Category,
 			"Confidence: " + slice.Confidence,
 			"",
 			"Summary:",
-		}
+		}...)
 		lines = append(lines, wrapWords(slice.Summary, 80)...)
 		lines = append(lines, "", "Rationale:")
 		lines = append(lines, wrapWords(slice.Rationale, 80)...)
@@ -169,16 +170,16 @@ func (m Model) centerLines() []string {
 	}
 	file := m.currentFile()
 	if file == nil {
-		return []string{"No selected file."}
+		return append(prefix, "No selected file.")
 	}
-	lines := []string{
+	lines := append(prefix, []string{
 		"Path: " + file.Path,
 		"Status: " + file.Status,
 		fmt.Sprintf("Binary: %t", file.IsBinary),
 		fmt.Sprintf("Generated/lockfile: %t", file.IsGenerated),
 		"",
 		"Hunks:",
-	}
+	}...)
 	for i, hunk := range file.Hunks {
 		prefix := "  "
 		if i == m.selectedHunk {
@@ -186,6 +187,16 @@ func (m Model) centerLines() []string {
 		}
 		lines = append(lines, prefix+hunk.ID+" "+hunk.Header)
 	}
+	return lines
+}
+
+func (m Model) errorLines() []string {
+	if m.errMsg == "" {
+		return nil
+	}
+	lines := []string{"Last error:"}
+	lines = append(lines, wrapWords(m.errMsg, 80)...)
+	lines = append(lines, "")
 	return lines
 }
 
