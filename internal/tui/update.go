@@ -371,7 +371,7 @@ func (m Model) panelAtMouse(mouse tea.Mouse) (panel, bool) {
 			return panelRight, true
 		}
 	}
-	leftW, centerW, _ := weightedWidths(m.width, []int{1, 2, 2})
+	leftW, centerW, _ := horizontalPanelWidths(m.width)
 	switch {
 	case mouse.X < leftW:
 		return panelLeft, true
@@ -482,7 +482,7 @@ func (m *Model) syncComponentSizes() {
 		m.setComponentSizes(m.width, max(1, top-2), m.width, max(1, mid-2), m.width, max(1, bottom-2))
 		return
 	}
-	leftW, centerW, rightW := weightedWidths(m.width, []int{1, 2, 2})
+	leftW, centerW, rightW := horizontalPanelWidths(m.width)
 	innerHeight := max(1, contentHeight-2)
 	m.setComponentSizes(leftW, innerHeight, centerW, innerHeight, rightW, innerHeight)
 }
@@ -542,7 +542,7 @@ func (m Model) panelSize(p panel) (int, int) {
 			return m.width, bottom
 		}
 	}
-	left, center, right := weightedWidths(m.width, []int{1, 2, 2})
+	left, center, right := horizontalPanelWidths(m.width)
 	switch p {
 	case panelLeft:
 		return left, contentHeight

@@ -128,7 +128,7 @@ func (m Model) renderPanels(width, height int) string {
 	if shouldStack(width, height) {
 		return m.renderStacked(width, height)
 	}
-	leftW, centerW, rightW := weightedWidths(width, []int{1, 2, 2})
+	leftW, centerW, rightW := horizontalPanelWidths(width)
 	innerHeight := max(1, height-2)
 	left := m.renderListPanel(m.leftTitle(), leftW, innerHeight, m.focus == panelLeft)
 	center := m.renderCenterPanel(m.centerTitle(), centerW, innerHeight, m.focus == panelCenter)
@@ -697,6 +697,10 @@ func uniqueFiles(refs []agent.HunkRef) []string {
 
 func shouldStack(width, height int) bool {
 	return width < 100 || height < 30
+}
+
+func horizontalPanelWidths(total int) (int, int, int) {
+	return weightedWidths(total, []int{1, 1, 3})
 }
 
 func weightedWidths(total int, weights []int) (int, int, int) {
