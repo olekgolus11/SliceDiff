@@ -124,8 +124,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetScrolls()
 		m.clearError()
 		m.status = "Semantic slices ready."
-		key := m.cacheKey(agent.RunnerName(msg.slices.Runner))
-		return m.synced(spinnerCmd, writeCacheCmd(m.opts.Config, key, msg.slices))
+		keys := m.cacheKeys(agent.RunnerName(msg.slices.Runner))
+		return m.synced(spinnerCmd, writeCacheCmd(m.opts.Config, keys, msg.slices))
 	case tea.KeyPressMsg:
 		next, cmd := m.handleKey(msg)
 		return next.synced(spinnerCmd, cmd)

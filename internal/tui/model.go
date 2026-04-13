@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -148,26 +149,34 @@ func runAgentCmd(opts Options, pr github.PullRequest, runner agent.RunnerName) t
 	}
 }
 
-func readCacheCmd(store *config.Store, key string) tea.Cmd {
+func readCacheCmd(store *config.Store, keys []string) tea.Cmd {
 	return func() tea.Msg {
+		if len(keys) == 0 {
+			return cacheMsg{hit: false}
+		}
 		var slices agent.SliceSet
-		err := store.ReadJSON(key, &slices)
-		if err != nil {
+		for _, key := range keys {
+			err := store.ReadJSON(key, &slices)
+			if err == nil {
+				return cacheMsg{slices: &slices, hit: true}
+			}
 			if errors.Is(err, os.ErrNotExist) {
-				return cacheMsg{hit: false}
+				continue
 			}
 			return cacheMsg{err: err}
 		}
-		return cacheMsg{slices: &slices, hit: true}
+		return cacheMsg{hit: false}
 	}
 }
 
-func writeCacheCmd(store *config.Store, key string, slices *agent.SliceSet) tea.Cmd {
+func writeCacheCmd(store *config.Store, keys []string, slices *agent.SliceSet) tea.Cmd {
 	return func() tea.Msg {
 		if slices == nil {
 			return nil
 		}
-		_ = store.WriteJSON(key, slices)
+		for _, key := range keys {
+			_ = store.WriteJSON(key, slices)
+		}
 		return nil
 	}
 }
@@ -204,9 +213,9 @@ func (m Model) maybeStartAI() (Model, tea.Cmd) {
 	m.aiBusy = true
 	m.status = "Checking cache..."
 	m.clearError()
-	key := m.cacheKey(runner)
+	keys := m.cacheKeys(runner)
 	if !m.opts.RegenSlices {
-		return m, readCacheCmd(m.opts.Config, key)
+		return m, readCacheCmd(m.opts.Config, keys)
 	}
 	return m.startAgent(runner)
 }
@@ -237,11 +246,16 @@ func (m Model) selectedRunner() agent.RunnerName {
 	return ""
 }
 
-func (m Model) cacheKey(runner agent.RunnerName) string {
+func (m Model) cacheKeys(runner agent.RunnerName) []string {
 	if m.pr == nil {
-		return ""
+		return nil
 	}
-	return config.BuildSliceCacheKey(m.pr.Owner, m.pr.Repo, m.pr.Number, m.pr.HeadSHA, string(runner), agent.PromptVersion, m.opts.Version)
+	legacy := config.BuildSliceCacheKey(m.pr.Owner, m.pr.Repo, m.pr.Number, m.pr.HeadSHA, string(runner), agent.PromptVersion, m.opts.Version)
+	normalized := config.BuildSliceCacheKey(strings.ToLower(m.pr.Owner), strings.ToLower(m.pr.Repo), m.pr.Number, m.pr.HeadSHA, string(runner), agent.PromptVersion, m.opts.Version)
+	if legacy == normalized {
+		return []string{legacy}
+	}
+	return []string{legacy, normalized}
 }
 
 func (m Model) currentFile() *diff.DiffFile {

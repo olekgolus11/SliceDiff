@@ -180,6 +180,31 @@ func TestManualTypingFiltersScopedRepositoryPool(t *testing.T) {
 	}
 }
 
+func TestCacheReadFallsBackToNormalizedRepoName(t *testing.T) {
+	store := &config.Store{CacheDir: t.TempDir()}
+	m := New(Options{Config: store, Version: "0.1.0"})
+	m.pr = &github.PullRequest{
+		Owner:   "Owner",
+		Repo:    "Repo",
+		Number:  12,
+		HeadSHA: "sha",
+	}
+	normalizedKey := config.BuildSliceCacheKey("owner", "repo", 12, "sha", "codex", agent.PromptVersion, "0.1.0")
+	want := &agent.SliceSet{Runner: "codex", PRHeadSHA: "sha"}
+	if err := store.WriteJSON(normalizedKey, want); err != nil {
+		t.Fatalf("WriteJSON returned error: %v", err)
+	}
+
+	msg := readCacheCmd(store, m.cacheKeys(agent.RunnerCodex))()
+	got, ok := msg.(cacheMsg)
+	if !ok {
+		t.Fatalf("expected cacheMsg, got %T", msg)
+	}
+	if !got.hit || got.slices == nil || got.slices.Runner != "codex" {
+		t.Fatalf("expected normalized cache hit, got %+v", got)
+	}
+}
+
 func TestWelcomePickerFitsTerminal(t *testing.T) {
 	m := New(Options{Config: &config.Store{}})
 	m.width = 72
