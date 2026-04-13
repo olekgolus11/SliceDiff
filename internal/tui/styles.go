@@ -266,8 +266,8 @@ func panelStyle(style styles, focused bool, width int) lipgloss.Style {
 	if focused {
 		panel = style.panelFocused
 	}
-	if width > 2 {
-		panel = panel.Width(width - 2)
+	if width > 0 {
+		panel = panel.Width(width)
 	}
 	return panel
 }

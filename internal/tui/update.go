@@ -391,7 +391,7 @@ func (m *Model) syncComponentSizes() {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
-	contentHeight := max(1, m.height-lipglossHeight(m.renderHeader())-lipglossHeight(m.renderFooter()))
+	contentHeight := max(1, m.height-lipglossHeight(m.renderHeader())-1)
 	if shouldStack(m.width, contentHeight) {
 		total := max(9, contentHeight)
 		top := total / 3
@@ -445,8 +445,7 @@ func (m Model) focusVisibleLines() int {
 
 func (m Model) panelSize(p panel) (int, int) {
 	titleHeight := lipglossHeight(m.renderHeader())
-	statusHeight := lipglossHeight(m.renderFooter())
-	contentHeight := max(1, m.height-titleHeight-statusHeight)
+	contentHeight := max(1, m.height-titleHeight-1)
 	if shouldStack(m.width, contentHeight) {
 		total := max(9, contentHeight)
 		top := total / 3

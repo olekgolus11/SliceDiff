@@ -41,10 +41,10 @@ func (m Model) View() tea.View {
 func (m Model) renderMain() string {
 	header := m.renderHeader()
 	footer := m.renderFooter()
-	contentHeight := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
+	contentHeight := max(1, m.height-lipgloss.Height(header)-1)
 	body := m.renderPanels(m.width, contentHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-	return m.style.app.Width(m.width).Height(m.height).Render(screen)
+	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
 }
 
 func (m Model) renderHeader() string {
@@ -115,12 +115,13 @@ func (m Model) renderFooter() string {
 	helpModel.ShowAll = m.showHelp
 	helpModel.SetWidth(max(1, m.width-lipgloss.Width(statusText)-3))
 	helpText := helpModel.View(m.keys)
+	helpText = firstLine(helpText)
 	line := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusText,
 		m.style.subtle.Render(" | "),
 		helpText,
 	)
-	return m.style.footer.Width(m.width).Render(fitLines(line, max(1, lipgloss.Height(line)), m.width))
+	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
 }
 
 func (m Model) renderPanels(width, height int) string {
@@ -740,6 +741,11 @@ func limitLines(lines []string, limit int) []string {
 	out := append([]string{}, lines[:limit]...)
 	out[limit-1] = ansi.Truncate(out[limit-1], max(1, lipgloss.Width(out[limit-1])-3), "...")
 	return out
+}
+
+func firstLine(content string) string {
+	line, _, _ := strings.Cut(content, "\n")
+	return line
 }
 
 func truncate(s string, maxLen int) string {

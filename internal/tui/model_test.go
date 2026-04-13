@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 	"github.com/olekgolus11/SliceDiff/internal/config"
 	"github.com/olekgolus11/SliceDiff/internal/diff"
@@ -148,6 +149,27 @@ func TestViewConfiguresAltScreenAndMouse(t *testing.T) {
 	}
 	if !strings.Contains(view.Content, "SliceDiff") {
 		t.Fatalf("expected rendered view content, got %q", view.Content)
+	}
+}
+
+func TestMainViewUsesFullTerminalAndKeepsFooterVisible(t *testing.T) {
+	m := testModel()
+	m.width = 100
+	m.height = 24
+	m.syncComponents()
+
+	content := m.renderMain()
+	if got := lipgloss.Height(content); got != m.height {
+		t.Fatalf("expected rendered height %d, got %d", m.height, got)
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || !strings.Contains(lines[len(lines)-1], "next panel") {
+		t.Fatalf("expected footer on final line, got last line %q", lines[len(lines)-1])
+	}
+	for i, line := range lines {
+		if got := lipgloss.Width(line); got != m.width {
+			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
+		}
 	}
 }
 
