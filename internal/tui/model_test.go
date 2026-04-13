@@ -360,36 +360,34 @@ func TestMouseWheelScrollsSlicesPanelUnderCursor(t *testing.T) {
 	}
 }
 
-func TestMouseWheelScrollsHunksPanelUnderCursor(t *testing.T) {
+func TestMouseWheelMovesHunkSelectionUnderCursor(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
 	m.focus = panelRight
-	m.selectedHunk = 1
+	m.selectedHunk = 0
 	m.centerViewport.SetHeight(2)
 	m.centerViewport.SetContentLines([]string{"Hunks", "h1", "h2", "h3", "h4", "h5"})
 
+	needsSync := false
 	for i := 0; i < 4; i++ {
-		needsSync := m.handleMouseWheel(tea.Mouse{X: 30, Y: 3, Button: tea.MouseWheelDown})
-		if needsSync {
-			t.Fatal("expected hunks wheel scroll to preserve viewport state without full sync")
-		}
+		needsSync = m.handleMouseWheel(tea.Mouse{X: 30, Y: 3, Button: tea.MouseWheelDown}) || needsSync
+	}
+	if !needsSync {
+		t.Fatal("expected hunks wheel movement to request full sync")
 	}
 	if m.focus != panelCenter {
 		t.Fatalf("expected wheel over hunks to focus center panel, got %v", m.focus)
 	}
-	if got := m.centerViewport.YOffset(); got != 1 {
-		t.Fatalf("expected wheel down to scroll hunks by 1 line, got %d", got)
-	}
 	if m.selectedHunk != 1 {
-		t.Fatalf("expected selected hunk unchanged, got %d", m.selectedHunk)
+		t.Fatalf("expected wheel down to move selected hunk by 1 row, got %d", m.selectedHunk)
 	}
 }
 
-func TestMouseWheelUpdateDoesNotSnapHunksViewportBackToSelectedHunk(t *testing.T) {
+func TestMouseWheelUpdateMovesHunkSelectionAndSyncsDetails(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
 	m.focus = panelRight
-	m.selectedHunk = 1
+	m.selectedHunk = 0
 	m.centerViewport.SetHeight(2)
 	m.centerViewport.SetContentLines([]string{"Hunks", "h1", "h2", "h3", "h4", "h5"})
 
@@ -401,11 +399,8 @@ func TestMouseWheelUpdateDoesNotSnapHunksViewportBackToSelectedHunk(t *testing.T
 	if got.focus != panelCenter {
 		t.Fatalf("expected wheel over hunks to focus center panel, got %v", got.focus)
 	}
-	if offset := got.centerViewport.YOffset(); offset != 1 {
-		t.Fatalf("expected update wheel path to preserve hunks scroll offset 1, got %d", offset)
-	}
 	if got.selectedHunk != 1 {
-		t.Fatalf("expected selected hunk unchanged, got %d", got.selectedHunk)
+		t.Fatalf("expected wheel over hunks to move selected hunk by 1 row, got %d", got.selectedHunk)
 	}
 }
 
