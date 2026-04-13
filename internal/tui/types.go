@@ -40,6 +40,17 @@ const (
 	panelRight
 )
 
+type reviewItem struct {
+	ID           string
+	Title        string
+	Category     string
+	Confidence   string
+	Summary      string
+	Rationale    string
+	HunkRefs     []agent.HunkRef
+	IsUnassigned bool
+}
+
 type styles struct {
 	title     string
 	subtle    string

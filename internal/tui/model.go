@@ -30,10 +30,14 @@ type Model struct {
 	selectedFile  int
 	selectedHunk  int
 	selectedSetup int
+	leftScroll    int
+	centerScroll  int
+	rightScroll   int
 	showHelp      bool
 
 	status string
 	errMsg string
+	appErr *AppError
 	aiBusy bool
 
 	style styles
@@ -101,6 +105,7 @@ func (m Model) maybeStartAI() (Model, tea.Cmd) {
 		m.mode = modeRaw
 		m.stage = stageReady
 		m.status = "AI disabled. Showing raw diff."
+		m.clearError()
 		return m, nil
 	}
 
@@ -113,6 +118,7 @@ func (m Model) maybeStartAI() (Model, tea.Cmd) {
 		m.mode = modeRaw
 		m.stage = stageReady
 		m.status = "AI consent declined. Showing raw diff."
+		m.clearError()
 		return m, nil
 	}
 
@@ -125,6 +131,7 @@ func (m Model) maybeStartAI() (Model, tea.Cmd) {
 
 	m.aiBusy = true
 	m.status = "Checking cache..."
+	m.clearError()
 	key := m.cacheKey(runner)
 	if !m.opts.RegenSlices {
 		return m, readCacheCmd(m.opts.Config, key)
@@ -140,6 +147,7 @@ func (m Model) startAgent(runner agent.RunnerName) (Model, tea.Cmd) {
 	}
 	m.aiBusy = true
 	m.status = "Running " + string(runner) + " semantic grouping..."
+	m.clearError()
 	pr := *m.pr
 	return m, runAgentCmd(m.opts, pr, runner)
 }
@@ -202,6 +210,60 @@ func (m Model) currentSlice() *agent.Slice {
 		m.selectedSlice = len(m.slices.Slices) - 1
 	}
 	return &m.slices.Slices[m.selectedSlice]
+}
+
+func (m Model) reviewItems() []reviewItem {
+	if m.slices == nil {
+		return nil
+	}
+	items := make([]reviewItem, 0, len(m.slices.Slices)+1)
+	for _, slice := range m.slices.Slices {
+		items = append(items, reviewItem{
+			ID:         slice.ID,
+			Title:      slice.Title,
+			Category:   slice.Category,
+			Confidence: slice.Confidence,
+			Summary:    slice.Summary,
+			Rationale:  slice.Rationale,
+			HunkRefs:   slice.HunkRefs,
+		})
+	}
+	if len(m.slices.UnassignedHunks) > 0 {
+		items = append(items, reviewItem{
+			ID:           "unassigned",
+			Title:        "Unassigned or uncertain hunks",
+			Category:     "uncertain",
+			Confidence:   "low",
+			Summary:      "The AI runner did not confidently assign these hunks to a semantic slice.",
+			Rationale:    "SliceDiff keeps these hunks visible so no part of the PR is hidden.",
+			HunkRefs:     m.slices.UnassignedHunks,
+			IsUnassigned: true,
+		})
+	}
+	return items
+}
+
+func (m Model) currentReviewItem() *reviewItem {
+	items := m.reviewItems()
+	if len(items) == 0 {
+		return nil
+	}
+	idx := clamp(m.selectedSlice, 0, len(items)-1)
+	return &items[idx]
+}
+
+func (m *Model) setAppError(err error) {
+	m.appErr = classifyError(err)
+	if m.appErr == nil {
+		m.errMsg = ""
+		return
+	}
+	m.errMsg = m.appErr.Detail
+}
+
+func (m *Model) clearError() {
+	m.appErr = nil
+	m.errMsg = ""
 }
 
 func mustGetwd() string {

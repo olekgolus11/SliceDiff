@@ -24,7 +24,7 @@ func (m Model) View() string {
 	case stageRunner:
 		return m.renderRunnerPicker()
 	case stageFatal:
-		return m.renderFrame("Could not start SliceDiff", []string{m.errMsg, "", "Press q to quit."})
+		return m.renderFrame("Could not start SliceDiff", append(m.errorLines(), "Press q to quit."))
 	case stageReady:
 		return m.renderMain()
 	default:
@@ -58,13 +58,13 @@ func (m Model) renderTitle() string {
 }
 
 func (m Model) renderStatus() string {
-	help := "tab focus | j/k move | enter drill | v view | r regen | ? help | q quit"
+	help := "tab focus | j/k move | pg scroll | home/end | v view | r regen | ? help | q quit"
 	if m.showHelp {
-		help = "Grouped: left selects slices, right selects hunks. Raw: left selects files, right selects hunks."
+		help = "Grouped: left selects slices, center/right select hunks. Raw: left selects files, center/right select hunks."
 	}
 	text := truncate(m.status+" | "+help, m.width)
-	if m.errMsg != "" {
-		text = truncate(m.status+" | "+m.errMsg+" | "+help, m.width)
+	if m.appErr != nil {
+		text = truncate(m.appErr.Summary+" | "+help, m.width)
 	}
 	return statusStyle(m.width).Render(text)
 }
@@ -75,9 +75,9 @@ func (m Model) renderPanels(width, height int) string {
 	}
 	leftW, centerW, rightW := weightedWidths(width, []int{1, 2, 2})
 	innerHeight := max(1, height-2)
-	left := m.renderPanel("Slices", m.leftLines(), leftW, innerHeight, m.focus == panelLeft)
-	center := m.renderPanel("Details", m.centerLines(), centerW, innerHeight, m.focus == panelCenter)
-	right := m.renderPanel("Hunk", m.rightLines(), rightW, innerHeight, m.focus == panelRight)
+	left := m.renderPanel(m.leftTitle(), m.leftLines(), leftW, innerHeight, m.focus == panelLeft, m.leftScroll)
+	center := m.renderPanel(m.centerTitle(), m.centerLines(), centerW, innerHeight, m.focus == panelCenter, m.centerScroll)
+	right := m.renderPanel(m.rightTitle(), m.rightLines(), rightW, innerHeight, m.focus == panelRight, m.rightScroll)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
 }
 
@@ -86,17 +86,19 @@ func (m Model) renderStacked(width, height int) string {
 	top := total / 3
 	mid := total / 3
 	bottom := total - top - mid
-	left := m.renderPanel("Slices", m.leftLines(), width, max(1, top-2), m.focus == panelLeft)
-	center := m.renderPanel("Details", m.centerLines(), width, max(1, mid-2), m.focus == panelCenter)
-	right := m.renderPanel("Hunk", m.rightLines(), width, max(1, bottom-2), m.focus == panelRight)
+	left := m.renderPanel(m.leftTitle(), m.leftLines(), width, max(1, top-2), m.focus == panelLeft, m.leftScroll)
+	center := m.renderPanel(m.centerTitle(), m.centerLines(), width, max(1, mid-2), m.focus == panelCenter, m.centerScroll)
+	right := m.renderPanel(m.rightTitle(), m.rightLines(), width, max(1, bottom-2), m.focus == panelRight, m.rightScroll)
 	return lipgloss.JoinVertical(lipgloss.Left, left, center, right)
 }
 
-func (m Model) renderPanel(title string, lines []string, width, innerHeight int, focused bool) string {
+func (m Model) renderPanel(title string, lines []string, width, innerHeight int, focused bool, scroll int) string {
 	innerWidth := max(1, width-4)
 	out := make([]string, 0, innerHeight)
 	out = append(out, truncate(title, innerWidth))
-	for _, line := range lines {
+	visible := max(0, innerHeight-1)
+	scroll = clamp(scroll, 0, max(0, len(lines)-visible))
+	for _, line := range lines[scroll:] {
 		if len(out) >= innerHeight {
 			break
 		}
@@ -110,12 +112,16 @@ func (m Model) renderPanel(title string, lines []string, width, innerHeight int,
 
 func (m Model) leftLines() []string {
 	if m.mode == modeGrouped && m.slices != nil {
-		if len(m.slices.Slices) == 0 {
-			return []string{"No semantic slices returned."}
+		items := m.reviewItems()
+		if len(items) == 0 {
+			return []string{"No semantic slices returned.", "Press v for raw diff view.", "Press r to regenerate slices."}
 		}
-		lines := make([]string, 0, len(m.slices.Slices))
-		for i, slice := range m.slices.Slices {
-			label := fmt.Sprintf("%d. %s", i+1, slice.Title)
+		lines := make([]string, 0, len(items))
+		for i, item := range items {
+			label := fmt.Sprintf("%d. %s", i+1, item.Title)
+			if item.IsUnassigned {
+				label += fmt.Sprintf(" (%d)", len(item.HunkRefs))
+			}
 			if i == m.selectedSlice {
 				label = "> " + label
 			} else {
@@ -126,7 +132,7 @@ func (m Model) leftLines() []string {
 		return lines
 	}
 	if m.pr == nil || len(m.pr.Files) == 0 {
-		return []string{"No files."}
+		return []string{"No files changed in this PR."}
 	}
 	lines := make([]string, 0, len(m.pr.Files))
 	for i, file := range m.pr.Files {
@@ -144,22 +150,26 @@ func (m Model) leftLines() []string {
 func (m Model) centerLines() []string {
 	prefix := m.errorLines()
 	if m.mode == modeGrouped && m.slices != nil {
-		slice := m.currentSlice()
-		if slice == nil {
+		item := m.currentReviewItem()
+		if item == nil {
 			return append(prefix, "No selected slice.")
 		}
 		lines := append(prefix, []string{
-			"Title: " + slice.Title,
-			"Category: " + slice.Category,
-			"Confidence: " + slice.Confidence,
+			"Title: " + item.Title,
+			"Category: " + item.Category,
+			"Confidence: " + item.Confidence,
 			"",
 			"Summary:",
 		}...)
-		lines = append(lines, wrapWords(slice.Summary, 80)...)
+		lines = append(lines, wrapWords(item.Summary, 80)...)
 		lines = append(lines, "", "Rationale:")
-		lines = append(lines, wrapWords(slice.Rationale, 80)...)
+		lines = append(lines, wrapWords(item.Rationale, 80)...)
+		lines = append(lines, "", "Files:")
+		for _, file := range uniqueFiles(item.HunkRefs) {
+			lines = append(lines, "  "+file)
+		}
 		lines = append(lines, "", "Hunks:")
-		for i, ref := range slice.HunkRefs {
+		for i, ref := range item.HunkRefs {
 			prefix := "  "
 			if i == m.selectedHunk {
 				prefix = "> "
@@ -172,6 +182,15 @@ func (m Model) centerLines() []string {
 	if file == nil {
 		return append(prefix, "No selected file.")
 	}
+	if file.IsBinary {
+		return append(prefix, []string{
+			"Path: " + file.Path,
+			"Status: " + file.Status,
+			"Binary: true",
+			"",
+			"Binary files do not include line hunks in the unified diff.",
+		}...)
+	}
 	lines := append(prefix, []string{
 		"Path: " + file.Path,
 		"Status: " + file.Status,
@@ -180,6 +199,10 @@ func (m Model) centerLines() []string {
 		"",
 		"Hunks:",
 	}...)
+	if len(file.Hunks) == 0 {
+		lines = append(lines, "No text hunks available for this file.")
+		return lines
+	}
 	for i, hunk := range file.Hunks {
 		prefix := "  "
 		if i == m.selectedHunk {
@@ -191,11 +214,18 @@ func (m Model) centerLines() []string {
 }
 
 func (m Model) errorLines() []string {
-	if m.errMsg == "" {
+	if m.appErr == nil {
 		return nil
 	}
-	lines := []string{"Last error:"}
-	lines = append(lines, wrapWords(m.errMsg, 80)...)
+	lines := []string{
+		"Last error:",
+		"Kind: " + string(m.appErr.Kind),
+		"Summary: " + m.appErr.Summary,
+		"Recovery:",
+	}
+	lines = append(lines, wrapWords(m.appErr.Recovery, 80)...)
+	lines = append(lines, "", "Details:")
+	lines = append(lines, wrapWords(m.appErr.Detail, 80)...)
 	lines = append(lines, "")
 	return lines
 }
@@ -203,15 +233,18 @@ func (m Model) errorLines() []string {
 func (m Model) rightLines() []string {
 	var hunk *diff.DiffHunk
 	if m.mode == modeGrouped && m.slices != nil {
-		if slice := m.currentSlice(); slice != nil && len(slice.HunkRefs) > 0 {
-			idx := clamp(m.selectedHunk, 0, len(slice.HunkRefs)-1)
-			hunk = m.findHunk(slice.HunkRefs[idx])
+		if item := m.currentReviewItem(); item != nil && len(item.HunkRefs) > 0 {
+			idx := clamp(m.selectedHunk, 0, len(item.HunkRefs)-1)
+			hunk = m.findHunk(item.HunkRefs[idx])
 		}
 	} else {
 		hunk = m.currentRawHunk()
 	}
 	if hunk == nil {
-		return []string{"No selected hunk."}
+		if file := m.currentFile(); file != nil && file.IsBinary {
+			return []string{file.Path, "", "Binary file. No text hunk preview is available."}
+		}
+		return []string{"No selected hunk.", "", "Use the left panel to select a file or slice with text hunks."}
 	}
 	lines := []string{hunk.FilePath, hunk.Header, ""}
 	for _, line := range hunk.Lines {
@@ -245,7 +278,7 @@ func (m Model) renderFrame(title string, lines []string) string {
 	width := max(40, m.width)
 	height := max(8, m.height)
 	content := append([]string{title, ""}, lines...)
-	panel := m.renderPanel("SliceDiff", content, min(width, 100), min(height-2, 20), true)
+	panel := m.renderPanel("SliceDiff", content, min(width, 100), min(height-2, 20), true, 0)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel)
 }
 
@@ -278,6 +311,84 @@ func (m Model) prTitle() string {
 		return ""
 	}
 	return m.pr.Title
+}
+
+func (m Model) leftTitle() string {
+	focus := focusMark(m.focus == panelLeft)
+	if m.mode == modeGrouped && m.slices != nil {
+		total := len(m.reviewItems())
+		if total == 0 {
+			return focus + " Slices 0/0"
+		}
+		return fmt.Sprintf("%s Slices %d/%d", focus, clamp(m.selectedSlice+1, 1, total), total)
+	}
+	total := 0
+	if m.pr != nil {
+		total = len(m.pr.Files)
+	}
+	if total == 0 {
+		return focus + " Files 0/0"
+	}
+	return fmt.Sprintf("%s Files %d/%d", focus, clamp(m.selectedFile+1, 1, total), total)
+}
+
+func (m Model) centerTitle() string {
+	focus := focusMark(m.focus == panelCenter)
+	if m.mode == modeGrouped && m.slices != nil {
+		total := 0
+		if item := m.currentReviewItem(); item != nil {
+			total = len(item.HunkRefs)
+		}
+		if total == 0 {
+			return focus + " Details hunk 0/0"
+		}
+		return fmt.Sprintf("%s Details hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, total), total)
+	}
+	total := 0
+	if file := m.currentFile(); file != nil {
+		total = len(file.Hunks)
+	}
+	if total == 0 {
+		return focus + " Details hunk 0/0"
+	}
+	return fmt.Sprintf("%s Details hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, total), total)
+}
+
+func (m Model) rightTitle() string {
+	focus := focusMark(m.focus == panelRight)
+	if m.mode == modeGrouped && m.slices != nil {
+		if item := m.currentReviewItem(); item != nil && len(item.HunkRefs) > 0 {
+			return fmt.Sprintf("%s Hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, len(item.HunkRefs)), len(item.HunkRefs))
+		}
+		return focus + " Hunk 0/0"
+	}
+	if file := m.currentFile(); file != nil && len(file.Hunks) > 0 {
+		return fmt.Sprintf("%s Hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, len(file.Hunks)), len(file.Hunks))
+	}
+	return focus + " Hunk 0/0"
+}
+
+func focusMark(active bool) string {
+	if active {
+		return "*"
+	}
+	return " "
+}
+
+func uniqueFiles(refs []agent.HunkRef) []string {
+	seen := map[string]bool{}
+	var files []string
+	for _, ref := range refs {
+		if seen[ref.FilePath] {
+			continue
+		}
+		seen[ref.FilePath] = true
+		files = append(files, ref.FilePath)
+	}
+	if len(files) == 0 {
+		return []string{"No files referenced."}
+	}
+	return files
 }
 
 func shouldStack(width, height int) bool {

@@ -14,11 +14,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loadPRMsg:
 		if msg.err != nil {
 			m.stage = stageFatal
-			m.errMsg = msg.err.Error()
-			m.status = "Could not load PR."
+			m.setAppError(msg.err)
+			m.status = m.errorSummary("Could not load PR.")
 			return m, nil
 		}
 		m.pr = msg.pr
+		m.clearError()
 		m.status = "PR loaded."
 		return m.maybeStartAI()
 	case cacheMsg:
@@ -39,13 +40,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.mode = modeRaw
 			m.stage = stageReady
-			m.errMsg = msg.err.Error()
-			m.status = "AI grouping failed. Showing raw diff."
+			m.setAppError(msg.err)
+			m.status = m.errorSummary("AI grouping failed. Showing raw diff.")
 			return m, nil
 		}
 		m.slices = msg.slices
 		m.mode = modeGrouped
 		m.stage = stageReady
+		m.selectedSlice = 0
+		m.selectedHunk = 0
+		m.leftScroll = 0
+		m.centerScroll = 0
+		m.rightScroll = 0
+		m.clearError()
 		m.status = "Semantic slices ready."
 		key := m.cacheKey(agent.RunnerName(msg.slices.Runner))
 		return m, writeCacheCmd(m.opts.Config, key, msg.slices)
@@ -128,9 +135,13 @@ func (m Model) handleReadyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "v":
 		if m.mode == modeGrouped && m.slices != nil {
 			m.mode = modeRaw
+			m.selectedHunk = 0
+			m.resetScrolls()
 			m.status = "Raw diff view."
 		} else if m.slices != nil {
 			m.mode = modeGrouped
+			m.selectedHunk = 0
+			m.resetScrolls()
 			m.status = "Grouped slice view."
 		}
 	case "r":
@@ -146,6 +157,14 @@ func (m Model) handleReadyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveSelection(-1)
 	case "down", "j":
 		m.moveSelection(1)
+	case "pgup":
+		m.pageFocused(-1)
+	case "pgdown":
+		m.pageFocused(1)
+	case "home":
+		m.homeFocused()
+	case "end":
+		m.endFocused()
 	case "left", "h":
 		if m.focus > panelLeft {
 			m.focus--
@@ -166,11 +185,19 @@ func (m *Model) moveSelection(delta int) {
 	if m.mode == modeGrouped && m.slices != nil {
 		switch m.focus {
 		case panelLeft:
-			m.selectedSlice = clamp(m.selectedSlice+delta, 0, len(m.slices.Slices)-1)
+			before := m.selectedSlice
+			m.selectedSlice = clamp(m.selectedSlice+delta, 0, len(m.reviewItems())-1)
+			if m.selectedSlice != before {
+				m.selectedHunk = 0
+				m.centerScroll = 0
+				m.rightScroll = 0
+			}
+			m.ensureSelectedVisible(panelLeft)
 		default:
-			slice := m.currentSlice()
-			if slice != nil {
-				m.selectedHunk = clamp(m.selectedHunk+delta, 0, len(slice.HunkRefs)-1)
+			item := m.currentReviewItem()
+			if item != nil {
+				m.selectedHunk = clamp(m.selectedHunk+delta, 0, len(item.HunkRefs)-1)
+				m.ensureSelectedVisible(panelCenter)
 			}
 		}
 		return
@@ -180,13 +207,146 @@ func (m *Model) moveSelection(delta int) {
 		if m.pr != nil {
 			m.selectedFile = clamp(m.selectedFile+delta, 0, len(m.pr.Files)-1)
 			m.selectedHunk = 0
+			m.centerScroll = 0
+			m.rightScroll = 0
+			m.ensureSelectedVisible(panelLeft)
 		}
 	default:
 		file := m.currentFile()
 		if file != nil {
 			m.selectedHunk = clamp(m.selectedHunk+delta, 0, len(file.Hunks)-1)
+			m.ensureSelectedVisible(panelCenter)
 		}
 	}
+}
+
+func (m *Model) pageFocused(direction int) {
+	page := max(1, m.focusVisibleLines()-1)
+	switch m.focus {
+	case panelLeft:
+		m.moveSelection(direction * page)
+	case panelCenter:
+		m.centerScroll = clamp(m.centerScroll+(direction*page), 0, max(0, len(m.centerLines())-page))
+	case panelRight:
+		m.rightScroll = clamp(m.rightScroll+(direction*page), 0, max(0, len(m.rightLines())-page))
+	}
+}
+
+func (m *Model) homeFocused() {
+	switch m.focus {
+	case panelLeft:
+		if m.mode == modeGrouped {
+			m.selectedSlice = 0
+		} else {
+			m.selectedFile = 0
+		}
+		m.selectedHunk = 0
+		m.leftScroll = 0
+	case panelCenter:
+		m.centerScroll = 0
+		m.selectedHunk = 0
+	case panelRight:
+		m.rightScroll = 0
+	}
+}
+
+func (m *Model) endFocused() {
+	switch m.focus {
+	case panelLeft:
+		if m.mode == modeGrouped {
+			m.selectedSlice = max(0, len(m.reviewItems())-1)
+		} else if m.pr != nil {
+			m.selectedFile = max(0, len(m.pr.Files)-1)
+		}
+		m.selectedHunk = 0
+		m.ensureSelectedVisible(panelLeft)
+	case panelCenter:
+		if m.mode == modeGrouped {
+			if item := m.currentReviewItem(); item != nil {
+				m.selectedHunk = max(0, len(item.HunkRefs)-1)
+			}
+		} else if file := m.currentFile(); file != nil {
+			m.selectedHunk = max(0, len(file.Hunks)-1)
+		}
+		m.ensureSelectedVisible(panelCenter)
+	case panelRight:
+		lines := m.rightLines()
+		m.rightScroll = max(0, len(lines)-m.focusVisibleLines())
+	}
+}
+
+func (m *Model) resetScrolls() {
+	m.leftScroll = 0
+	m.centerScroll = 0
+	m.rightScroll = 0
+}
+
+func (m *Model) ensureSelectedVisible(p panel) {
+	visible := max(1, m.focusVisibleLines())
+	switch p {
+	case panelLeft:
+		selected := m.selectedFile
+		if m.mode == modeGrouped {
+			selected = m.selectedSlice
+		}
+		m.leftScroll = ensureVisible(m.leftScroll, selected, visible)
+	case panelCenter:
+		m.centerScroll = ensureVisible(m.centerScroll, m.selectedHunk, visible)
+	case panelRight:
+		m.rightScroll = ensureVisible(m.rightScroll, m.selectedHunk, visible)
+	}
+}
+
+func ensureVisible(scroll, selected, visible int) int {
+	if selected < scroll {
+		return selected
+	}
+	if selected >= scroll+visible {
+		return selected - visible + 1
+	}
+	return scroll
+}
+
+func (m Model) focusVisibleLines() int {
+	width, height := m.panelSize(m.focus)
+	_ = width
+	return max(1, height-3)
+}
+
+func (m Model) panelSize(p panel) (int, int) {
+	titleHeight := 2
+	statusHeight := 1
+	contentHeight := max(1, m.height-titleHeight-statusHeight)
+	if shouldStack(m.width, contentHeight) {
+		total := max(9, contentHeight)
+		top := total / 3
+		mid := total / 3
+		bottom := total - top - mid
+		switch p {
+		case panelLeft:
+			return m.width, top
+		case panelCenter:
+			return m.width, mid
+		default:
+			return m.width, bottom
+		}
+	}
+	left, center, right := weightedWidths(m.width, []int{1, 2, 2})
+	switch p {
+	case panelLeft:
+		return left, contentHeight
+	case panelCenter:
+		return center, contentHeight
+	default:
+		return right, contentHeight
+	}
+}
+
+func (m Model) errorSummary(fallback string) string {
+	if m.appErr == nil || m.appErr.Summary == "" {
+		return fallback
+	}
+	return m.appErr.Summary
 }
 
 func clamp(v, min, max int) int {
