@@ -38,29 +38,49 @@ func TestSearchReviewRequestsBuildsGhSearchAndParsesResults(t *testing.T) {
 	}
 }
 
-func TestSearchRepositoriesBuildsGhSearchAndParsesResults(t *testing.T) {
+func TestLoadRepositoryPoolUsesGraphQLMergesFiltersAndSorts(t *testing.T) {
 	var gotArgs []string
 	client := Client{output: func(_ context.Context, args ...string) ([]byte, error) {
 		gotArgs = append([]string(nil), args...)
-		return []byte(`[{
-			"fullName": "owner/repo",
-			"description": "Terminal app",
-			"updatedAt": "2026-04-12T10:20:30Z",
-			"pushedAt": "2026-04-13T10:20:30Z",
-			"isPrivate": true
-		}]`), nil
+		return []byte(`{
+			"data": {
+				"viewer": {
+					"repositories": {
+						"nodes": [
+							{"nameWithOwner": "owner/old", "description": "Old repo", "updatedAt": "2026-04-10T10:20:30Z", "pushedAt": "2026-04-10T10:20:30Z", "isPrivate": false, "isArchived": false},
+							{"nameWithOwner": "owner/archived", "description": "Archived repo", "updatedAt": "2026-04-14T10:20:30Z", "pushedAt": "2026-04-14T10:20:30Z", "isPrivate": false, "isArchived": true}
+						]
+					},
+					"repositoriesContributedTo": {
+						"nodes": [
+							{"nameWithOwner": "team/new", "description": "Terminal app", "updatedAt": "2026-04-12T10:20:30Z", "pushedAt": "2026-04-13T10:20:30Z", "isPrivate": true, "isArchived": false},
+							{"nameWithOwner": "owner/old", "description": "Duplicate newer copy", "updatedAt": "2026-04-11T10:20:30Z", "pushedAt": "2026-04-11T10:20:30Z", "isPrivate": false, "isArchived": false}
+						]
+					}
+				}
+			}
+		}`), nil
 	}}
 
-	results, err := client.SearchRepositories(context.Background(), " owner/repo ")
+	results, err := client.LoadRepositoryPool(context.Background())
 	if err != nil {
-		t.Fatalf("SearchRepositories returned error: %v", err)
+		t.Fatalf("LoadRepositoryPool returned error: %v", err)
 	}
-	wantArgs := []string{"search", "repos", "owner/repo", "--sort=updated", "--order=desc", "--archived=false", "--json", "fullName,description,updatedAt,pushedAt,isPrivate", "-L", "30"}
-	if !reflect.DeepEqual(gotArgs, wantArgs) {
-		t.Fatalf("unexpected args:\n got %v\nwant %v", gotArgs, wantArgs)
+	if len(gotArgs) != 4 || gotArgs[0] != "api" || gotArgs[1] != "graphql" || gotArgs[2] != "-f" || !strings.HasPrefix(gotArgs[3], "query=") {
+		t.Fatalf("unexpected args: %v", gotArgs)
 	}
-	if len(results) != 1 || results[0].FullName != "owner/repo" || !results[0].IsPrivate {
+	if len(results) != 2 {
 		t.Fatalf("unexpected results: %+v", results)
+	}
+	if results[0].FullName != "team/new" || !results[0].IsPrivate {
+		t.Fatalf("expected most recent contributed repo first, got %+v", results[0])
+	}
+	if results[1].FullName != "owner/old" || results[1].Description != "Duplicate newer copy" {
+		t.Fatalf("expected duplicate to keep newer copy, got %+v", results[1])
+	}
+	filtered := FilterRepositories(results, "terminal")
+	if len(filtered) != 1 || filtered[0].FullName != "team/new" {
+		t.Fatalf("unexpected filtered results: %+v", filtered)
 	}
 }
 

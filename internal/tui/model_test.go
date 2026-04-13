@@ -135,6 +135,16 @@ func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
 	m.syncComponents()
 
 	content := m.renderWelcome()
+	lines := strings.Split(content, "\n")
+	if len(lines) > 1 && strings.Contains(lines[0]+lines[1], "Choose a pull request") {
+		t.Fatalf("expected choose copy in centered body, got top lines:\n%s\n%s", lines[0], lines[1])
+	}
+	if !strings.Contains(content, "SLICE") || !strings.Contains(content, "DIFF") {
+		t.Fatalf("expected ASCII cake logo, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Choose a pull request") {
+		t.Fatalf("expected centered choose copy, got:\n%s", content)
+	}
 	if !strings.Contains(content, "No requested reviews") {
 		t.Fatalf("expected empty state, got:\n%s", content)
 	}
@@ -143,6 +153,30 @@ func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
 	content = m.renderWelcome()
 	if !strings.Contains(content, "Could not load choices") || !strings.Contains(content, "gh search failed") {
 		t.Fatalf("expected error state, got:\n%s", content)
+	}
+}
+
+func TestManualTypingFiltersScopedRepositoryPool(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.welcomeSection = welcomeManual
+	m.manualStep = manualRepos
+	m.repoPoolLoaded = true
+	m.repoPool = []github.RepositorySearchResult{
+		{FullName: "team/useful-api", Description: "Work repository"},
+		{FullName: "other/noise", Description: "Static"},
+	}
+
+	got, cmd := m.handleWelcomeKey(keyPress("u"))
+	if cmd != nil {
+		t.Fatal("expected local filtering without gh command")
+	}
+	if got.manualQuery != "u" {
+		t.Fatalf("expected query to update, got %q", got.manualQuery)
+	}
+	if len(got.repoResults) != 1 || got.repoResults[0].FullName != "team/useful-api" {
+		t.Fatalf("unexpected filtered repos: %+v", got.repoResults)
 	}
 }
 

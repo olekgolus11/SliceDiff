@@ -58,8 +58,10 @@ type Model struct {
 	manualQuery    string
 	selectedRepo   string
 	reviewPRs      []github.PRSearchResult
+	repoPool       []github.RepositorySearchResult
 	repoResults    []github.RepositorySearchResult
 	repoPRs        []github.PRSearchResult
+	repoPoolLoaded bool
 	pickerBusy     bool
 	pickerErr      string
 
@@ -121,10 +123,10 @@ func loadReviewRequestsCmd() tea.Cmd {
 	}
 }
 
-func searchReposCmd(query string) tea.Cmd {
+func loadRepoPoolCmd() tea.Cmd {
 	return func() tea.Msg {
-		repos, err := github.NewClient().SearchRepositories(context.Background(), query)
-		return repoSearchMsg{query: query, repos: repos, err: err}
+		repos, err := github.NewClient().LoadRepositoryPool(context.Background())
+		return repoPoolMsg{repos: repos, err: err}
 	}
 }
 

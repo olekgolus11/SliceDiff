@@ -34,6 +34,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.maybeStartAI()
 		return next.synced(spinnerCmd, cmd)
 	case reviewRequestsMsg:
+		if m.welcomeSection != welcomeRequested {
+			if msg.err == nil {
+				m.reviewPRs = msg.prs
+			}
+			return m.synced(spinnerCmd)
+		}
 		m.pickerBusy = false
 		if msg.err != nil {
 			m.pickerErr = msg.err.Error()
@@ -45,23 +51,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Requested reviews loaded."
 		}
 		return m.synced(spinnerCmd)
-	case repoSearchMsg:
-		if msg.query != m.manualQuery {
+	case repoPoolMsg:
+		if m.welcomeSection != welcomeManual {
+			if msg.err == nil {
+				m.repoPool = msg.repos
+				m.repoPoolLoaded = true
+			}
 			return m.synced(spinnerCmd)
 		}
 		m.pickerBusy = false
 		if msg.err != nil {
 			m.pickerErr = msg.err.Error()
-			m.status = "Could not search repositories."
+			m.status = "Could not load your repositories."
 		} else {
 			m.pickerErr = ""
-			m.repoResults = msg.repos
+			m.repoPool = msg.repos
+			m.repoPoolLoaded = true
+			m.repoResults = github.FilterRepositories(m.repoPool, m.manualQuery)
 			m.selectedPicker = 0
-			m.status = "Repository search complete."
+			m.status = "Repository list ready."
 		}
 		return m.synced(spinnerCmd)
 	case repoPRsMsg:
 		if msg.repo != m.selectedRepo {
+			return m.synced(spinnerCmd)
+		}
+		if m.welcomeSection != welcomeManual || m.manualStep != manualPRs {
+			if msg.err == nil {
+				m.repoPRs = msg.prs
+			}
 			return m.synced(spinnerCmd)
 		}
 		m.pickerBusy = false
@@ -185,6 +203,12 @@ func (m Model) switchWelcomeSection() (Model, tea.Cmd) {
 		m.selectedPicker = 0
 		m.status = "Type a repository search."
 		m.pickerErr = ""
+		if !m.repoPoolLoaded {
+			m.pickerBusy = true
+			m.status = "Loading your repositories..."
+			return m, loadRepoPoolCmd()
+		}
+		m.repoResults = github.FilterRepositories(m.repoPool, m.manualQuery)
 		return m, nil
 	}
 	m.welcomeSection = welcomeRequested
@@ -251,9 +275,18 @@ func (m Model) searchManualRepos() (Model, tea.Cmd) {
 		m.status = "Type a repository search."
 		return m, nil
 	}
-	m.pickerBusy = true
-	m.status = "Searching repositories..."
-	return m, searchReposCmd(m.manualQuery)
+	if !m.repoPoolLoaded {
+		if m.pickerBusy {
+			return m, nil
+		}
+		m.pickerBusy = true
+		m.status = "Loading your repositories..."
+		return m, loadRepoPoolCmd()
+	}
+	m.repoResults = github.FilterRepositories(m.repoPool, m.manualQuery)
+	m.pickerBusy = false
+	m.status = "Repository search complete."
+	return m, nil
 }
 
 func (m *Model) movePicker(delta int) {

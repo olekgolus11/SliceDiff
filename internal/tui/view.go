@@ -50,34 +50,60 @@ func (m Model) renderMain() string {
 }
 
 func (m Model) renderWelcome() string {
-	header := m.renderWelcomeHeader()
 	footer := m.renderPickerFooter()
-	bodyHeight := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
+	bodyHeight := max(1, m.height-lipgloss.Height(footer))
 	body := m.renderWelcomeBody(m.width, bodyHeight)
-	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	screen := lipgloss.JoinVertical(lipgloss.Left, body, footer)
 	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
 }
 
-func (m Model) renderWelcomeHeader() string {
+func (m Model) renderWelcomeCluster(width int) string {
 	requested := m.style.chipHot.Render("Requested review")
 	manual := m.style.chip.Render("Manual")
 	if m.welcomeSection == welcomeManual {
 		requested = m.style.chip.Render("Requested review")
 		manual = m.style.chipHot.Render("Manual")
 	}
-	line1 := lipgloss.JoinHorizontal(lipgloss.Center,
+	lines := []string{}
+	if width >= 24 {
+		lines = append(lines, strings.Split(m.renderCakeLogo(width), "\n")...)
+	}
+	lines = append(lines,
 		m.style.headerTitle.Render("SliceDiff"),
-		"  ",
-		m.style.subtle.Render("Choose a pull request"),
-		"  ",
-		requested,
-		" ",
-		manual,
+		m.style.diffContext.Render("Choose a pull request"),
+		lipgloss.JoinHorizontal(lipgloss.Center,
+			requested,
+			" ",
+			manual,
+		),
+		m.style.subtle.Render(m.welcomeSubtitle()),
 	)
-	line1 = ansi.Truncate(line1, m.width, "...")
-	line2 := m.style.headerMeta.Render(truncate(m.welcomeSubtitle(), max(1, m.width-2)))
-	line2 = ansi.Truncate(line2, m.width, "...")
-	return m.style.header.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
+	for i, line := range lines {
+		lines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(line, width, "..."))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderCakeLogo(width int) string {
+	lines := []string{
+		"     i i i",
+		"     | | |",
+		"  .--'-----'--.",
+		"  |  SLICE    |",
+		"  |   DIFF    |",
+		"  '-----------'",
+	}
+	for i, line := range lines {
+		style := m.style.diffContext
+		if i < 2 {
+			style = m.style.warning
+		}
+		if i == 3 || i == 4 {
+			style = m.style.emphasis
+		}
+		lines[i] = style.Render(lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(line, width, "...")))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) welcomeSubtitle() string {
@@ -93,29 +119,41 @@ func (m Model) welcomeSubtitle() string {
 func (m Model) renderWelcomeBody(width, height int) string {
 	bodyWidth := max(1, width-2)
 	bodyHeight := max(0, height-2)
-	title := m.welcomePanelTitle()
-	lines := []string{}
+	cluster := m.renderWelcomeCluster(bodyWidth)
+	clusterHeight := lipgloss.Height(cluster)
+	lines := make([]string, 0, bodyHeight)
+	promptLines := []string{}
 	if m.welcomeSection == welcomeManual && m.manualStep == manualRepos {
 		prompt := "/ " + m.manualQuery
 		if m.manualQuery == "" {
 			prompt = "/ type a repository name"
 		}
-		lines = append(lines, m.style.callout.Render(ansi.Truncate(prompt, bodyWidth, "...")), "")
+		promptLines = append(promptLines, m.style.callout.Render(ansi.Truncate(prompt, bodyWidth, "...")), "")
 	}
+	minListHeight := 6
+	if bodyHeight < 18 {
+		minListHeight = 3
+	}
+	topPad := max(0, (bodyHeight-clusterHeight-len(promptLines)-minListHeight)/2)
+	for i := 0; i < topPad; i++ {
+		lines = append(lines, "")
+	}
+	lines = append(lines, cluster, "")
+	lines = append(lines, promptLines...)
 	if m.pickerBusy {
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading..."))
 	} else if m.pickerErr != "" {
 		lines = append(lines, m.style.errorText.Render("Could not load choices."), m.style.diffContext.Render(ansi.Truncate(m.pickerErr, bodyWidth, "...")))
 	} else {
 		m.syncPickerList()
-		listHeight := max(0, bodyHeight-len(lines))
+		listHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
 		pickerList := m.pickerList
 		pickerList.SetSize(bodyWidth, listHeight)
 		pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
 		lines = append(lines, fitLines(pickerList.View(), listHeight, bodyWidth))
 	}
 	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
-	return m.renderPanel(title, body, width, max(1, height-2), true)
+	return m.renderPanel(m.welcomePanelTitle(), body, width, max(1, height-2), true)
 }
 
 func (m Model) renderPickerFooter() string {

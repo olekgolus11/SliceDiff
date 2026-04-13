@@ -152,8 +152,7 @@ type reviewRequestsMsg struct {
 	err error
 }
 
-type repoSearchMsg struct {
-	query string
+type repoPoolMsg struct {
 	repos []github.RepositorySearchResult
 	err   error
 }
