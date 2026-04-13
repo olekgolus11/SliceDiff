@@ -40,7 +40,7 @@ func TestHorizontalPanelWidthsPrioritizeDiff(t *testing.T) {
 	if left+center+right != 100 {
 		t.Fatalf("widths do not sum to total: %d %d %d", left, center, right)
 	}
-	if left != 20 || center != 20 || right != 60 {
+	if left != 20 || center != 30 || right != 50 {
 		t.Fatalf("unexpected horizontal panel widths: %d %d %d", left, center, right)
 	}
 }

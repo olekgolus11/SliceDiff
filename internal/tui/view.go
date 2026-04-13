@@ -700,7 +700,7 @@ func shouldStack(width, height int) bool {
 }
 
 func horizontalPanelWidths(total int) (int, int, int) {
-	return weightedWidths(total, []int{1, 1, 3})
+	return weightedWidths(total, []int{2, 3, 5})
 }
 
 func weightedWidths(total int, weights []int) (int, int, int) {
