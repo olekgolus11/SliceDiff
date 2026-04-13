@@ -35,6 +35,16 @@ func TestWeightedWidths(t *testing.T) {
 	}
 }
 
+func TestHorizontalPanelWidthsPrioritizeDiff(t *testing.T) {
+	left, center, right := horizontalPanelWidths(100)
+	if left+center+right != 100 {
+		t.Fatalf("widths do not sum to total: %d %d %d", left, center, right)
+	}
+	if left != 20 || center != 30 || right != 50 {
+		t.Fatalf("unexpected horizontal panel widths: %d %d %d", left, center, right)
+	}
+}
+
 func TestGroupedSliceChangeResetsHunkAndViewportOffsets(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped
