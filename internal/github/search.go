@@ -1,0 +1,194 @@
+package github
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type PRSearchResult struct {
+	Owner     string
+	Repo      string
+	Number    int
+	Title     string
+	URL       string
+	Author    string
+	UpdatedAt time.Time
+	IsDraft   bool
+}
+
+func (p PRSearchResult) RepoName() string {
+	if p.Owner == "" || p.Repo == "" {
+		return ""
+	}
+	return p.Owner + "/" + p.Repo
+}
+
+func (p PRSearchResult) Target() Target {
+	repo := p.RepoName()
+	return Target{
+		Raw:    fmt.Sprintf("%s#%d", repo, p.Number),
+		Owner:  p.Owner,
+		Repo:   p.Repo,
+		Number: p.Number,
+	}
+}
+
+type RepositorySearchResult struct {
+	FullName    string
+	Description string
+	UpdatedAt   time.Time
+	PushedAt    time.Time
+	IsPrivate   bool
+}
+
+func (c Client) SearchReviewRequests(ctx context.Context) ([]PRSearchResult, error) {
+	args := []string{
+		"search", "prs",
+		"--review-requested=@me",
+		"--state=open",
+		"--sort=updated",
+		"--order=desc",
+		"--json", "number,title,url,updatedAt,repository,author,isDraft",
+		"-L", "50",
+	}
+	return c.searchPRs(ctx, args)
+}
+
+func (c Client) ListOpenPRs(ctx context.Context, ownerRepo string) ([]PRSearchResult, error) {
+	ownerRepo = strings.TrimSpace(ownerRepo)
+	if ownerRepo == "" {
+		return nil, fmt.Errorf("repository is required")
+	}
+	args := []string{
+		"search", "prs",
+		"--repo", ownerRepo,
+		"--state=open",
+		"--sort=updated",
+		"--order=desc",
+		"--json", "number,title,url,updatedAt,author,isDraft",
+		"-L", "50",
+	}
+	results, err := c.searchPRs(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	owner, repo, ok := strings.Cut(ownerRepo, "/")
+	if !ok {
+		return results, nil
+	}
+	for i := range results {
+		if results[i].Owner == "" {
+			results[i].Owner = owner
+		}
+		if results[i].Repo == "" {
+			results[i].Repo = repo
+		}
+	}
+	return results, nil
+}
+
+func (c Client) SearchRepositories(ctx context.Context, query string) ([]RepositorySearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	args := []string{
+		"search", "repos", query,
+		"--sort=updated",
+		"--order=desc",
+		"--archived=false",
+		"--json", "fullName,description,updatedAt,pushedAt,isPrivate",
+		"-L", "30",
+	}
+	out, err := c.outputGh(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var payload []struct {
+		FullName    string `json:"fullName"`
+		Description string `json:"description"`
+		UpdatedAt   string `json:"updatedAt"`
+		PushedAt    string `json:"pushedAt"`
+		IsPrivate   bool   `json:"isPrivate"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return nil, fmt.Errorf("could not parse gh search repos output: %w", err)
+	}
+	results := make([]RepositorySearchResult, 0, len(payload))
+	for _, repo := range payload {
+		results = append(results, RepositorySearchResult{
+			FullName:    repo.FullName,
+			Description: repo.Description,
+			UpdatedAt:   parseGitHubTime(repo.UpdatedAt),
+			PushedAt:    parseGitHubTime(repo.PushedAt),
+			IsPrivate:   repo.IsPrivate,
+		})
+	}
+	return results, nil
+}
+
+func (c Client) searchPRs(ctx context.Context, args []string) ([]PRSearchResult, error) {
+	out, err := c.outputGh(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var payload []struct {
+		Number    int    `json:"number"`
+		Title     string `json:"title"`
+		URL       string `json:"url"`
+		UpdatedAt string `json:"updatedAt"`
+		IsDraft   bool   `json:"isDraft"`
+		Author    struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		Repository struct {
+			NameWithOwner string `json:"nameWithOwner"`
+			FullName      string `json:"fullName"`
+			Name          string `json:"name"`
+			Owner         struct {
+				Login string `json:"login"`
+			} `json:"owner"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return nil, fmt.Errorf("could not parse gh search prs output: %w", err)
+	}
+	results := make([]PRSearchResult, 0, len(payload))
+	for _, pr := range payload {
+		repoName := pr.Repository.NameWithOwner
+		if repoName == "" {
+			repoName = pr.Repository.FullName
+		}
+		if repoName == "" && pr.Repository.Owner.Login != "" && pr.Repository.Name != "" {
+			repoName = pr.Repository.Owner.Login + "/" + pr.Repository.Name
+		}
+		owner, repo := splitRepoName(repoName)
+		results = append(results, PRSearchResult{
+			Owner:     owner,
+			Repo:      repo,
+			Number:    pr.Number,
+			Title:     pr.Title,
+			URL:       pr.URL,
+			Author:    pr.Author.Login,
+			UpdatedAt: parseGitHubTime(pr.UpdatedAt),
+			IsDraft:   pr.IsDraft,
+		})
+	}
+	return results, nil
+}
+
+func splitRepoName(name string) (string, string) {
+	owner, repo, ok := strings.Cut(name, "/")
+	if !ok {
+		return "", ""
+	}
+	return owner, repo
+}
+
+func parseGitHubTime(raw string) time.Time {
+	t, _ := time.Parse(time.RFC3339, raw)
+	return t
+}

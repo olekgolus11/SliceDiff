@@ -29,6 +29,8 @@ type PullRequest struct {
 
 type Client struct {
 	Timeout time.Duration
+	output  func(context.Context, ...string) ([]byte, error)
+	run     func(context.Context, []byte, ...string) error
 }
 
 func NewClient() Client {
@@ -39,7 +41,7 @@ func (c Client) CheckAuth(ctx context.Context) error {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return fmt.Errorf("gh CLI not found on PATH; install GitHub CLI and run gh auth login")
 	}
-	if err := c.run(ctx, nil, "auth", "status"); err != nil {
+	if err := c.runGh(ctx, nil, "auth", "status"); err != nil {
 		return fmt.Errorf("GitHub CLI is not authenticated or cannot access GitHub; run gh auth login: %w", err)
 	}
 	return nil
@@ -109,7 +111,7 @@ func (c Client) prView(ctx context.Context, target Target, repo string) (prViewR
 	if repo != "" {
 		args = append(args, "--repo", repo)
 	}
-	out, err := c.output(ctx, args...)
+	out, err := c.outputGh(ctx, args...)
 	if err != nil {
 		return prViewResponse{}, err
 	}
@@ -125,7 +127,7 @@ func (c Client) prDiff(ctx context.Context, target Target, repo string) (string,
 	if repo != "" {
 		args = append(args, "--repo", repo)
 	}
-	out, err := c.output(ctx, args...)
+	out, err := c.outputGh(ctx, args...)
 	if err != nil {
 		return "", err
 	}
@@ -133,7 +135,7 @@ func (c Client) prDiff(ctx context.Context, target Target, repo string) (string,
 }
 
 func (c Client) currentRepo(ctx context.Context) (string, error) {
-	out, err := c.output(ctx, "repo", "view", "--json", "nameWithOwner")
+	out, err := c.outputGh(ctx, "repo", "view", "--json", "nameWithOwner")
 	if err != nil {
 		return "", err
 	}
@@ -149,7 +151,10 @@ func (c Client) currentRepo(ctx context.Context) (string, error) {
 	return payload.NameWithOwner, nil
 }
 
-func (c Client) output(ctx context.Context, args ...string) ([]byte, error) {
+func (c Client) outputGh(ctx context.Context, args ...string) ([]byte, error) {
+	if c.output != nil {
+		return c.output(ctx, args...)
+	}
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -171,7 +176,10 @@ func (c Client) output(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func (c Client) run(ctx context.Context, stdin []byte, args ...string) error {
+func (c Client) runGh(ctx context.Context, stdin []byte, args ...string) error {
+	if c.run != nil {
+		return c.run(ctx, stdin, args...)
+	}
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second

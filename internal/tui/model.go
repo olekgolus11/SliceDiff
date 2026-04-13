@@ -34,12 +34,14 @@ type Model struct {
 	selectedFile   int
 	selectedHunk   int
 	selectedSetup  int
+	selectedPicker int
 	showHelp       bool
 	wheelTarget    panel
 	wheelDirection int
 	wheelRemainder int
 
 	leftList       list.Model
+	pickerList     list.Model
 	centerViewport viewport.Model
 	rightViewport  viewport.Model
 	help           help.Model
@@ -51,6 +53,16 @@ type Model struct {
 	appErr *AppError
 	aiBusy bool
 
+	welcomeSection welcomeSection
+	manualStep     manualStep
+	manualQuery    string
+	selectedRepo   string
+	reviewPRs      []github.PRSearchResult
+	repoResults    []github.RepositorySearchResult
+	repoPRs        []github.PRSearchResult
+	pickerBusy     bool
+	pickerErr      string
+
 	style styles
 }
 
@@ -58,28 +70,68 @@ func New(opts Options) Model {
 	style := defaultStyles()
 	return Model{
 		opts:           opts,
-		stage:          stageLoading,
+		stage:          initialStage(opts),
 		mode:           modeRaw,
 		focus:          panelLeft,
-		status:         "Loading pull request...",
+		status:         initialStatus(opts),
 		leftList:       newNavigationList(style),
+		pickerList:     newNavigationList(style),
 		centerViewport: newViewport(style),
 		rightViewport:  newViewport(style),
 		help:           newHelp(style),
 		spinner:        newSpinner(style),
 		keys:           defaultKeyMap(),
+		pickerBusy:     !opts.HasTarget,
 		style:          style,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadPRCmd(m.opts.Target), m.spinner.Tick)
+	if m.opts.HasTarget {
+		return tea.Batch(loadPRCmd(m.opts.Target), m.spinner.Tick)
+	}
+	return tea.Batch(loadReviewRequestsCmd(), m.spinner.Tick)
+}
+
+func initialStage(opts Options) stage {
+	if opts.HasTarget {
+		return stageLoading
+	}
+	return stageWelcome
+}
+
+func initialStatus(opts Options) string {
+	if opts.HasTarget {
+		return "Loading pull request..."
+	}
+	return "Loading requested reviews..."
 }
 
 func loadPRCmd(target github.Target) tea.Cmd {
 	return func() tea.Msg {
 		pr, err := github.NewClient().Fetch(context.Background(), target)
 		return loadPRMsg{pr: pr, err: err}
+	}
+}
+
+func loadReviewRequestsCmd() tea.Cmd {
+	return func() tea.Msg {
+		prs, err := github.NewClient().SearchReviewRequests(context.Background())
+		return reviewRequestsMsg{prs: prs, err: err}
+	}
+}
+
+func searchReposCmd(query string) tea.Cmd {
+	return func() tea.Msg {
+		repos, err := github.NewClient().SearchRepositories(context.Background(), query)
+		return repoSearchMsg{query: query, repos: repos, err: err}
+	}
+}
+
+func listRepoPRsCmd(repo string) tea.Cmd {
+	return func() tea.Msg {
+		prs, err := github.NewClient().ListOpenPRs(context.Background(), repo)
+		return repoPRsMsg{repo: repo, prs: prs, err: err}
 	}
 }
 

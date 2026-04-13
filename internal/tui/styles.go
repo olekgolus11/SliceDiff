@@ -195,6 +195,11 @@ type navigationDelegate struct {
 	style styles
 }
 
+type titledListItem interface {
+	Title() string
+	Description() string
+}
+
 func (d navigationDelegate) Height() int {
 	return 2
 }
@@ -208,7 +213,7 @@ func (d navigationDelegate) Update(tea.Msg, *list.Model) tea.Cmd {
 }
 
 func (d navigationDelegate) Render(w io.Writer, model list.Model, index int, item list.Item) {
-	nav, ok := item.(navigationItem)
+	nav, ok := item.(titledListItem)
 	if !ok {
 		return
 	}

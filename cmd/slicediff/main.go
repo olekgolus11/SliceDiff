@@ -23,15 +23,21 @@ func main() {
 	flag.BoolVar(&regen, "regen-slices", false, "ignore cached semantic slices and regenerate")
 	flag.Parse()
 
-	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: slicediff [--ai-runner codex|opencode] [--no-ai] [--regen-slices] <pr-url|owner/repo#number|number>")
+	if flag.NArg() > 1 {
+		fmt.Fprintln(os.Stderr, "usage: slicediff [--ai-runner codex|opencode] [--no-ai] [--regen-slices] [<pr-url|owner/repo#number|number>]")
 		os.Exit(2)
 	}
 
-	target, err := github.ParseTarget(flag.Arg(0))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid PR target: %v\n", err)
-		os.Exit(2)
+	var target github.Target
+	hasTarget := false
+	if flag.NArg() == 1 {
+		var err error
+		target, err = github.ParseTarget(flag.Arg(0))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid PR target: %v\n", err)
+			os.Exit(2)
+		}
+		hasTarget = true
 	}
 
 	store, err := config.Load()
@@ -42,6 +48,7 @@ func main() {
 
 	model := tui.New(tui.Options{
 		Target:         target,
+		HasTarget:      hasTarget,
 		Config:         store,
 		RunnerOverride: runner,
 		NoAI:           noAI,

@@ -15,6 +15,8 @@ func (m Model) View() tea.View {
 	content := "SliceDiff loading..."
 	if m.width > 0 {
 		switch m.stage {
+		case stageWelcome:
+			content = m.renderWelcome()
 		case stageLoading:
 			content = m.renderFrame("Loading pull request...", []string{"Validating gh auth status", "Fetching PR metadata and diff"})
 		case stageConsent:
@@ -45,6 +47,115 @@ func (m Model) renderMain() string {
 	body := m.renderPanels(m.width, contentHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+}
+
+func (m Model) renderWelcome() string {
+	header := m.renderWelcomeHeader()
+	footer := m.renderPickerFooter()
+	bodyHeight := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
+	body := m.renderWelcomeBody(m.width, bodyHeight)
+	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+}
+
+func (m Model) renderWelcomeHeader() string {
+	requested := m.style.chipHot.Render("Requested review")
+	manual := m.style.chip.Render("Manual")
+	if m.welcomeSection == welcomeManual {
+		requested = m.style.chip.Render("Requested review")
+		manual = m.style.chipHot.Render("Manual")
+	}
+	line1 := lipgloss.JoinHorizontal(lipgloss.Center,
+		m.style.headerTitle.Render("SliceDiff"),
+		"  ",
+		m.style.subtle.Render("Choose a pull request"),
+		"  ",
+		requested,
+		" ",
+		manual,
+	)
+	line1 = ansi.Truncate(line1, m.width, "...")
+	line2 := m.style.headerMeta.Render(truncate(m.welcomeSubtitle(), max(1, m.width-2)))
+	line2 = ansi.Truncate(line2, m.width, "...")
+	return m.style.header.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
+}
+
+func (m Model) welcomeSubtitle() string {
+	if m.welcomeSection == welcomeRequested {
+		return "Review requests assigned to you, sorted by recent activity."
+	}
+	if m.manualStep == manualPRs && m.selectedRepo != "" {
+		return "Open pull requests in " + m.selectedRepo + "."
+	}
+	return "Search for a repository, then choose one of its open pull requests."
+}
+
+func (m Model) renderWelcomeBody(width, height int) string {
+	bodyWidth := max(1, width-2)
+	bodyHeight := max(0, height-2)
+	title := m.welcomePanelTitle()
+	lines := []string{}
+	if m.welcomeSection == welcomeManual && m.manualStep == manualRepos {
+		prompt := "/ " + m.manualQuery
+		if m.manualQuery == "" {
+			prompt = "/ type a repository name"
+		}
+		lines = append(lines, m.style.callout.Render(ansi.Truncate(prompt, bodyWidth, "...")), "")
+	}
+	if m.pickerBusy {
+		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading..."))
+	} else if m.pickerErr != "" {
+		lines = append(lines, m.style.errorText.Render("Could not load choices."), m.style.diffContext.Render(ansi.Truncate(m.pickerErr, bodyWidth, "...")))
+	} else {
+		m.syncPickerList()
+		listHeight := max(0, bodyHeight-len(lines))
+		pickerList := m.pickerList
+		pickerList.SetSize(bodyWidth, listHeight)
+		pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
+		lines = append(lines, fitLines(pickerList.View(), listHeight, bodyWidth))
+	}
+	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
+	return m.renderPanel(title, body, width, max(1, height-2), true)
+}
+
+func (m Model) renderPickerFooter() string {
+	help := "up/down move | enter selects | tab switches | q quits"
+	if m.welcomeSection == welcomeManual {
+		help = "type to search | enter selects | esc/backspace goes back | tab switches | q quits"
+	}
+	statusText := m.style.status.Render(truncate(m.status, max(1, m.width/3)))
+	line := lipgloss.JoinHorizontal(lipgloss.Top,
+		statusText,
+		m.style.subtle.Render(" | "),
+		m.style.subtle.Render(truncate(help, max(1, m.width-lipgloss.Width(statusText)-3))),
+	)
+	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
+}
+
+func (m Model) welcomePanelTitle() string {
+	switch m.welcomeSection {
+	case welcomeRequested:
+		total := len(m.reviewPRs)
+		if total == 0 {
+			return "Requested review 0/0"
+		}
+		return fmt.Sprintf("Requested review %d/%d", clamp(m.selectedPicker+1, 1, total), total)
+	case welcomeManual:
+		if m.manualStep == manualPRs {
+			total := len(m.repoPRs)
+			if total == 0 {
+				return "Manual pull requests 0/0"
+			}
+			return fmt.Sprintf("Manual pull requests %d/%d", clamp(m.selectedPicker+1, 1, total), total)
+		}
+		total := len(m.repoResults)
+		if total == 0 {
+			return "Manual repositories 0/0"
+		}
+		return fmt.Sprintf("Manual repositories %d/%d", clamp(m.selectedPicker+1, 1, total), total)
+	default:
+		return "Choose pull request"
+	}
 }
 
 func (m Model) renderHeader() string {
@@ -243,6 +354,84 @@ func (m Model) leftItems() []navigationItem {
 		})
 	}
 	return nav
+}
+
+func (m Model) pickerItems() []pickerItem {
+	if m.pickerBusy {
+		return []pickerItem{{title: "Loading choices", description: "SliceDiff is reading from gh."}}
+	}
+	if m.pickerErr != "" {
+		return []pickerItem{{title: "Could not load choices", description: m.pickerErr}}
+	}
+	switch m.welcomeSection {
+	case welcomeRequested:
+		if len(m.reviewPRs) == 0 {
+			return []pickerItem{{title: "No requested reviews", description: "Switch to Manual to choose a repository."}}
+		}
+		items := make([]pickerItem, 0, len(m.reviewPRs))
+		for i, pr := range m.reviewPRs {
+			desc := fmt.Sprintf("%s#%d", pr.RepoName(), pr.Number)
+			if pr.Author != "" {
+				desc += " / " + pr.Author
+			}
+			if pr.IsDraft {
+				desc += " / draft"
+			}
+			if !pr.UpdatedAt.IsZero() {
+				desc += " / updated " + pr.UpdatedAt.Format("2006-01-02")
+			}
+			items = append(items, pickerItem{index: i, title: pr.Title, description: desc})
+		}
+		return items
+	case welcomeManual:
+		if m.manualStep == manualPRs {
+			if len(m.repoPRs) == 0 {
+				return []pickerItem{{title: "No open pull requests", description: "Press esc or backspace to choose another repository."}}
+			}
+			items := make([]pickerItem, 0, len(m.repoPRs))
+			for i, pr := range m.repoPRs {
+				desc := fmt.Sprintf("%s#%d", m.selectedRepo, pr.Number)
+				if pr.Author != "" {
+					desc += " / " + pr.Author
+				}
+				if pr.IsDraft {
+					desc += " / draft"
+				}
+				if !pr.UpdatedAt.IsZero() {
+					desc += " / updated " + pr.UpdatedAt.Format("2006-01-02")
+				}
+				items = append(items, pickerItem{index: i, title: pr.Title, description: desc})
+			}
+			return items
+		}
+		if strings.TrimSpace(m.manualQuery) == "" {
+			return []pickerItem{{title: "Search repositories", description: "Type an owner or repository name to begin."}}
+		}
+		if len(m.repoResults) == 0 {
+			return []pickerItem{{title: "No repositories found", description: "Try a different owner or repository name."}}
+		}
+		items := make([]pickerItem, 0, len(m.repoResults))
+		for i, repo := range m.repoResults {
+			desc := repo.Description
+			if desc == "" {
+				desc = "No description"
+			}
+			if repo.IsPrivate {
+				desc += " / private"
+			}
+			when := repo.PushedAt
+			if when.IsZero() {
+				when = repo.UpdatedAt
+			}
+			if !when.IsZero() {
+				desc += " / updated " + when.Format("2006-01-02")
+			}
+			items = append(items, pickerItem{index: i, title: repo.FullName, description: desc})
+		}
+		return items
+	default:
+		return nil
+	}
 }
 
 func (m Model) leftLines() []string {

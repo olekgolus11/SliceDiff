@@ -9,6 +9,7 @@ import (
 
 type Options struct {
 	Target         github.Target
+	HasTarget      bool
 	Config         *config.Store
 	RunnerOverride string
 	NoAI           bool
@@ -19,11 +20,26 @@ type Options struct {
 type stage int
 
 const (
-	stageLoading stage = iota
+	stageWelcome stage = iota
+	stageLoading
 	stageConsent
 	stageRunner
 	stageReady
 	stageFatal
+)
+
+type welcomeSection int
+
+const (
+	welcomeRequested welcomeSection = iota
+	welcomeManual
+)
+
+type manualStep int
+
+const (
+	manualRepos manualStep = iota
+	manualPRs
 )
 
 type viewMode int
@@ -65,6 +81,24 @@ type navigationItem struct {
 	index       int
 	title       string
 	description string
+}
+
+type pickerItem struct {
+	index       int
+	title       string
+	description string
+}
+
+func (i pickerItem) Title() string {
+	return i.title
+}
+
+func (i pickerItem) Description() string {
+	return i.description
+}
+
+func (i pickerItem) FilterValue() string {
+	return i.title + " " + i.description
 }
 
 func (i navigationItem) Title() string {
@@ -111,6 +145,23 @@ func (k keyMap) FullHelp() [][]key.Binding {
 type loadPRMsg struct {
 	pr  *github.PullRequest
 	err error
+}
+
+type reviewRequestsMsg struct {
+	prs []github.PRSearchResult
+	err error
+}
+
+type repoSearchMsg struct {
+	query string
+	repos []github.RepositorySearchResult
+	err   error
+}
+
+type repoPRsMsg struct {
+	repo string
+	prs  []github.PRSearchResult
+	err  error
 }
 
 type agentMsg struct {

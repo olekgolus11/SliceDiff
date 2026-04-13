@@ -45,6 +45,130 @@ func TestHorizontalPanelWidthsPrioritizeDiff(t *testing.T) {
 	}
 }
 
+func TestNewWithTargetStartsLoading(t *testing.T) {
+	m := New(Options{Config: &config.Store{}, HasTarget: true, Target: github.Target{Owner: "owner", Repo: "repo", Number: 1}})
+
+	if m.stage != stageLoading {
+		t.Fatalf("expected loading stage, got %v", m.stage)
+	}
+	if m.status != "Loading pull request..." {
+		t.Fatalf("unexpected status %q", m.status)
+	}
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("expected init command for direct target")
+	}
+}
+
+func TestNewWithoutTargetStartsWelcomePicker(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+
+	if m.stage != stageWelcome {
+		t.Fatalf("expected welcome stage, got %v", m.stage)
+	}
+	if m.welcomeSection != welcomeRequested {
+		t.Fatalf("expected requested review section, got %v", m.welcomeSection)
+	}
+	if !m.pickerBusy {
+		t.Fatal("expected requested reviews to load on init")
+	}
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("expected init command for requested reviews")
+	}
+}
+
+func TestRequestedReviewSelectionStartsPRLoading(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = []github.PRSearchResult{{Owner: "owner", Repo: "repo", Number: 9, Title: "Pick me"}}
+
+	got, cmd := m.handleWelcomeKey(keyPress("enter"))
+
+	if got.stage != stageLoading {
+		t.Fatalf("expected loading stage, got %v", got.stage)
+	}
+	if !got.opts.HasTarget || got.opts.Target.Raw != "owner/repo#9" {
+		t.Fatalf("unexpected selected target: %+v", got.opts.Target)
+	}
+	if cmd == nil {
+		t.Fatal("expected load PR command")
+	}
+}
+
+func TestManualFlowRepoThenPRSelectionStartsPRLoading(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.welcomeSection = welcomeManual
+	m.manualStep = manualRepos
+	m.repoResults = []github.RepositorySearchResult{{FullName: "owner/repo", Description: "Terminal app"}}
+
+	got, cmd := m.handleWelcomeKey(keyPress("enter"))
+	if got.manualStep != manualPRs || got.selectedRepo != "owner/repo" {
+		t.Fatalf("expected repo PR step, got step=%v repo=%q", got.manualStep, got.selectedRepo)
+	}
+	if !got.pickerBusy || cmd == nil {
+		t.Fatal("expected repo PR loading command")
+	}
+
+	got.pickerBusy = false
+	got.repoPRs = []github.PRSearchResult{{Number: 10, Title: "Open PR"}}
+	got, cmd = got.handleWelcomeKey(keyPress("enter"))
+	if got.stage != stageLoading {
+		t.Fatalf("expected loading stage, got %v", got.stage)
+	}
+	if got.opts.Target.Raw != "owner/repo#10" {
+		t.Fatalf("unexpected target: %+v", got.opts.Target)
+	}
+	if cmd == nil {
+		t.Fatal("expected load PR command")
+	}
+}
+
+func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 80
+	m.height = 20
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = nil
+	m.syncComponents()
+
+	content := m.renderWelcome()
+	if !strings.Contains(content, "No requested reviews") {
+		t.Fatalf("expected empty state, got:\n%s", content)
+	}
+
+	m.pickerErr = "gh search failed"
+	content = m.renderWelcome()
+	if !strings.Contains(content, "Could not load choices") || !strings.Contains(content, "gh search failed") {
+		t.Fatalf("expected error state, got:\n%s", content)
+	}
+}
+
+func TestWelcomePickerFitsTerminal(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 72
+	m.height = 18
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = []github.PRSearchResult{
+		{Owner: "owner", Repo: "repo", Number: 1, Title: "A very long pull request title that should be truncated before wrapping through the terminal edge"},
+		{Owner: "owner", Repo: "repo", Number: 2, Title: "Second"},
+	}
+	m.syncComponents()
+
+	content := m.renderWelcome()
+	if got := lipgloss.Height(content); got != m.height {
+		t.Fatalf("expected height %d, got %d", m.height, got)
+	}
+	for i, line := range strings.Split(content, "\n") {
+		if got := lipgloss.Width(line); got != m.width {
+			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
+		}
+	}
+}
+
 func TestGroupedSliceChangeResetsHunkAndViewportOffsets(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped
@@ -549,6 +673,10 @@ func keyCode(s string) rune {
 		return tea.KeyHome
 	case "end":
 		return tea.KeyEnd
+	case "esc":
+		return tea.KeyEsc
+	case "backspace":
+		return tea.KeyBackspace
 	default:
 		return 0
 	}

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
+	"github.com/olekgolus11/SliceDiff/internal/github"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -32,6 +33,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "PR loaded."
 		next, cmd := m.maybeStartAI()
 		return next.synced(spinnerCmd, cmd)
+	case reviewRequestsMsg:
+		m.pickerBusy = false
+		if msg.err != nil {
+			m.pickerErr = msg.err.Error()
+			m.status = "Could not load requested reviews."
+		} else {
+			m.pickerErr = ""
+			m.reviewPRs = msg.prs
+			m.selectedPicker = 0
+			m.status = "Requested reviews loaded."
+		}
+		return m.synced(spinnerCmd)
+	case repoSearchMsg:
+		if msg.query != m.manualQuery {
+			return m.synced(spinnerCmd)
+		}
+		m.pickerBusy = false
+		if msg.err != nil {
+			m.pickerErr = msg.err.Error()
+			m.status = "Could not search repositories."
+		} else {
+			m.pickerErr = ""
+			m.repoResults = msg.repos
+			m.selectedPicker = 0
+			m.status = "Repository search complete."
+		}
+		return m.synced(spinnerCmd)
+	case repoPRsMsg:
+		if msg.repo != m.selectedRepo {
+			return m.synced(spinnerCmd)
+		}
+		m.pickerBusy = false
+		if msg.err != nil {
+			m.pickerErr = msg.err.Error()
+			m.status = "Could not load repository pull requests."
+		} else {
+			m.pickerErr = ""
+			m.repoPRs = msg.prs
+			m.selectedPicker = 0
+			m.status = "Open pull requests loaded."
+		}
+		return m.synced(spinnerCmd)
 	case cacheMsg:
 		runner := m.selectedRunner()
 		if msg.hit && msg.err == nil {
@@ -84,6 +127,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch m.stage {
+	case stageWelcome:
+		return m.handleWelcomeKey(msg)
 	case stageConsent:
 		return m.handleConsentKey(msg)
 	case stageRunner:
@@ -99,6 +144,195 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m Model) handleWelcomeKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+	case key.Matches(msg, m.keys.Tab):
+		return m.switchWelcomeSection()
+	case key.Matches(msg, m.keys.Left):
+		if m.welcomeSection != welcomeRequested {
+			return m.switchWelcomeSection()
+		}
+	case key.Matches(msg, m.keys.Right):
+		if m.welcomeSection != welcomeManual {
+			return m.switchWelcomeSection()
+		}
+	case key.Matches(msg, m.keys.Up):
+		m.movePicker(-1)
+	case key.Matches(msg, m.keys.Down):
+		m.movePicker(1)
+	case key.Matches(msg, m.keys.Home):
+		m.selectedPicker = 0
+	case key.Matches(msg, m.keys.End):
+		m.selectedPicker = max(0, m.pickerItemCount()-1)
+	case key.Matches(msg, m.keys.Enter):
+		return m.selectPickerItem()
+	}
+
+	if m.welcomeSection == welcomeManual {
+		return m.handleManualTextKey(msg)
+	}
+	return m, nil
+}
+
+func (m Model) switchWelcomeSection() (Model, tea.Cmd) {
+	if m.welcomeSection == welcomeRequested {
+		m.welcomeSection = welcomeManual
+		m.manualStep = manualRepos
+		m.selectedPicker = 0
+		m.status = "Type a repository search."
+		m.pickerErr = ""
+		return m, nil
+	}
+	m.welcomeSection = welcomeRequested
+	m.selectedPicker = 0
+	m.status = "Requested reviews."
+	m.pickerErr = ""
+	if m.reviewPRs == nil {
+		m.pickerBusy = true
+		m.status = "Loading requested reviews..."
+		return m, loadReviewRequestsCmd()
+	}
+	return m, nil
+}
+
+func (m Model) handleManualTextKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	if m.manualStep == manualPRs {
+		switch msg.String() {
+		case "esc", "backspace":
+			m.manualStep = manualRepos
+			m.selectedPicker = 0
+			m.status = "Repository search."
+			m.pickerErr = ""
+			return m, nil
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc":
+		if m.manualQuery != "" {
+			m.manualQuery = ""
+			m.repoResults = nil
+			m.selectedPicker = 0
+			m.pickerErr = ""
+			m.status = "Type a repository search."
+		}
+		return m, nil
+	case "backspace":
+		if m.manualQuery == "" {
+			return m, nil
+		}
+		runes := []rune(m.manualQuery)
+		m.manualQuery = string(runes[:len(runes)-1])
+		return m.searchManualRepos()
+	}
+
+	text := msg.String()
+	if len(text) == 1 && text >= " " && text <= "~" {
+		m.manualQuery += text
+		return m.searchManualRepos()
+	}
+	return m, nil
+}
+
+func (m Model) searchManualRepos() (Model, tea.Cmd) {
+	m.manualStep = manualRepos
+	m.selectedPicker = 0
+	m.repoPRs = nil
+	m.selectedRepo = ""
+	m.pickerErr = ""
+	if strings.TrimSpace(m.manualQuery) == "" {
+		m.repoResults = nil
+		m.pickerBusy = false
+		m.status = "Type a repository search."
+		return m, nil
+	}
+	m.pickerBusy = true
+	m.status = "Searching repositories..."
+	return m, searchReposCmd(m.manualQuery)
+}
+
+func (m *Model) movePicker(delta int) {
+	count := m.pickerItemCount()
+	if count <= 0 {
+		m.selectedPicker = 0
+		return
+	}
+	m.selectedPicker = clamp(m.selectedPicker+delta, 0, count-1)
+	m.pickerList.Select(m.selectedPicker)
+}
+
+func (m Model) pickerItemCount() int {
+	switch m.welcomeSection {
+	case welcomeRequested:
+		return len(m.reviewPRs)
+	case welcomeManual:
+		if m.manualStep == manualPRs {
+			return len(m.repoPRs)
+		}
+		return len(m.repoResults)
+	default:
+		return 0
+	}
+}
+
+func (m Model) selectPickerItem() (Model, tea.Cmd) {
+	if m.pickerBusy {
+		return m, nil
+	}
+	switch m.welcomeSection {
+	case welcomeRequested:
+		if m.selectedPicker >= 0 && m.selectedPicker < len(m.reviewPRs) {
+			return m.startLoadingTarget(m.reviewPRs[m.selectedPicker].Target())
+		}
+	case welcomeManual:
+		if m.manualStep == manualRepos {
+			if m.selectedPicker >= 0 && m.selectedPicker < len(m.repoResults) {
+				repo := m.repoResults[m.selectedPicker].FullName
+				m.selectedRepo = repo
+				m.manualStep = manualPRs
+				m.selectedPicker = 0
+				m.repoPRs = nil
+				m.pickerBusy = true
+				m.pickerErr = ""
+				m.status = "Loading open pull requests..."
+				return m, listRepoPRsCmd(repo)
+			}
+			return m, nil
+		}
+		if m.selectedPicker >= 0 && m.selectedPicker < len(m.repoPRs) {
+			pr := m.repoPRs[m.selectedPicker]
+			if pr.Owner == "" || pr.Repo == "" {
+				owner, repo, ok := strings.Cut(m.selectedRepo, "/")
+				if ok {
+					pr.Owner = owner
+					pr.Repo = repo
+				}
+			}
+			return m.startLoadingTarget(pr.Target())
+		}
+	}
+	return m, nil
+}
+
+func (m Model) startLoadingTarget(target github.Target) (Model, tea.Cmd) {
+	m.opts.Target = target
+	m.opts.HasTarget = true
+	m.stage = stageLoading
+	m.status = "Loading pull request..."
+	m.clearError()
+	m.pr = nil
+	m.slices = nil
+	m.mode = modeRaw
+	m.selectedSlice = 0
+	m.selectedFile = 0
+	m.selectedHunk = 0
+	m.resetScrolls()
+	return m, loadPRCmd(target)
 }
 
 func (m Model) handleConsentKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -460,10 +694,24 @@ func (m Model) synced(cmds ...tea.Cmd) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) syncComponents() {
+	if m.stage == stageWelcome {
+		m.syncPickerList()
+		return
+	}
 	m.syncComponentSizes()
 	m.syncLeftList()
 	m.syncViewportContent()
 	m.leftList.Select(m.currentLeftIndex())
+}
+
+func (m *Model) syncPickerList() {
+	items := m.pickerItems()
+	listItems := make([]list.Item, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, item)
+	}
+	_ = m.pickerList.SetItems(listItems)
+	m.pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
 }
 
 func (m *Model) syncComponentSizes() {
