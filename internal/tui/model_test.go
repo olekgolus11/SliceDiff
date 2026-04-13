@@ -188,6 +188,120 @@ func TestCenterPanelKeepsOverviewVisibleWithSelectedHunk(t *testing.T) {
 	}
 }
 
+func TestShortenPathAfterFirstSlash(t *testing.T) {
+	fits := "composeApp/src/file.kt"
+	if got := shortenPathAfterFirstSlash(fits, 80); got != fits {
+		t.Fatalf("expected fitting path unchanged, got %q", got)
+	}
+
+	longPath := "composeApp/src/commonMain/kotlin/com/farmermarket/kmp/products/presentation/seller_details.kt"
+	got := shortenPathAfterFirstSlash(longPath, 52)
+	if !strings.HasPrefix(got, "composeApp/...") {
+		t.Fatalf("expected first segment and middle dots, got %q", got)
+	}
+	tail := strings.TrimPrefix(got, "composeApp/...")
+	if !strings.HasSuffix(longPath, tail) {
+		t.Fatalf("expected longest suffix preserved, got %q", got)
+	}
+	if width := lipgloss.Width(got); width > 52 {
+		t.Fatalf("expected shortened path width <= 52, got %d: %q", width, got)
+	}
+
+	noSlash := shortenPathAfterFirstSlash("abcdefghijk", 8)
+	if noSlash != "abcde..." {
+		t.Fatalf("expected no-slash path to use end truncation, got %q", noSlash)
+	}
+}
+
+func TestGroupedDetailsHunkRowsElideLongFilePaths(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.slices.Slices[0].HunkRefs[0].FilePath = "composeApp/src/commonMain/kotlin/com/farmermarket/kmp/products/presentation/seller_details.kt"
+
+	lines, _ := m.centerScrollStyledLines(58)
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "composeApp/...") {
+		t.Fatalf("expected elided path in hunk rows, got:\n%s", rendered)
+	}
+	for _, line := range lines {
+		if width := lipgloss.Width(line); width > 58 {
+			t.Fatalf("expected line width <= 58, got %d: %q", width, line)
+		}
+	}
+}
+
+func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelRight
+	m.selectedHunk = 1
+	m.rightViewport.SetHeight(2)
+	m.rightViewport.SetContentLines([]string{"one", "two", "three", "four", "five"})
+
+	got, _ := m.handleReadyKey(keyPress("j"))
+	if got.selectedHunk != 1 {
+		t.Fatalf("expected selected hunk unchanged, got %d", got.selectedHunk)
+	}
+	if got.rightViewport.YOffset() == 0 {
+		t.Fatal("expected j to scroll diff viewport down")
+	}
+
+	got, _ = got.handleReadyKey(keyPress("k"))
+	if got.rightViewport.YOffset() != 0 {
+		t.Fatalf("expected k to scroll diff viewport up, got offset %d", got.rightViewport.YOffset())
+	}
+
+	got, _ = got.handleReadyKey(keyPress("down"))
+	if got.rightViewport.YOffset() == 0 {
+		t.Fatal("expected down arrow to scroll diff viewport down")
+	}
+}
+
+func TestRightPanelPageAndBoundaryKeysControlDiffViewport(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.focus = panelRight
+	m.selectedHunk = 1
+	m.rightViewport.SetHeight(2)
+	m.rightViewport.SetContentLines([]string{"one", "two", "three", "four", "five", "six"})
+
+	got, _ := m.handleReadyKey(keyPress("pgdown"))
+	if got.selectedHunk != 1 {
+		t.Fatalf("expected selected hunk unchanged after pgdown, got %d", got.selectedHunk)
+	}
+	if got.rightViewport.YOffset() == 0 {
+		t.Fatal("expected pgdown to scroll diff viewport")
+	}
+
+	got, _ = got.handleReadyKey(keyPress("pgup"))
+	if got.rightViewport.YOffset() != 0 {
+		t.Fatalf("expected pgup to return viewport to top, got offset %d", got.rightViewport.YOffset())
+	}
+
+	got, _ = got.handleReadyKey(keyPress("end"))
+	if got.rightViewport.YOffset() == 0 {
+		t.Fatal("expected end to move diff viewport to bottom")
+	}
+
+	got, _ = got.handleReadyKey(keyPress("home"))
+	if got.rightViewport.YOffset() != 0 {
+		t.Fatalf("expected home to move diff viewport to top, got offset %d", got.rightViewport.YOffset())
+	}
+}
+
+func TestCenterPanelLineKeysStillMoveSelectedHunk(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.mode = modeGrouped
+	m.focus = panelCenter
+	m.selectedHunk = 0
+
+	got, _ := m.handleReadyKey(keyPress("j"))
+	if got.selectedHunk != 1 {
+		t.Fatalf("expected center j to move selected hunk, got %d", got.selectedHunk)
+	}
+}
+
 func testModel() Model {
 	m := New(Options{Config: &config.Store{}})
 	m.width = 120

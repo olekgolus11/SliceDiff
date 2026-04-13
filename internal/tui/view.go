@@ -370,7 +370,7 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 	)
 }
 
-func (m Model) centerScrollStyledLines() ([]string, int) {
+func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 	if m.mode == modeGrouped && m.slices != nil {
 		item := m.currentReviewItem()
 		if item == nil {
@@ -379,9 +379,15 @@ func (m Model) centerScrollStyledLines() ([]string, int) {
 		lines := []string{m.style.section.Render("Hunks")}
 		selectedLine := -1
 		for i, ref := range item.HunkRefs {
-			line := fmt.Sprintf("  %s  %s", ref.HunkID, ref.FilePath)
+			prefix := "  "
 			if i == m.selectedHunk {
-				line = m.style.diffSelected.Render("> " + ref.HunkID + "  " + ref.FilePath)
+				prefix = "> "
+			}
+			stem := prefix + ref.HunkID + "  "
+			path := shortenPathAfterFirstSlash(ref.FilePath, max(1, width-ansi.StringWidth(stem)))
+			line := stem + path
+			if i == m.selectedHunk {
+				line = m.style.diffSelected.Render(line)
 				selectedLine = len(lines)
 			} else {
 				line = m.style.diffContext.Render(line)
@@ -419,7 +425,7 @@ func (m Model) centerScrollStyledLines() ([]string, int) {
 
 func (m Model) centerStyledLines() ([]string, int) {
 	overview := m.centerOverviewStyledLines(82)
-	scrolling, selectedLine := m.centerScrollStyledLines()
+	scrolling, selectedLine := m.centerScrollStyledLines(82)
 	if selectedLine >= 0 {
 		selectedLine += len(overview)
 	}
@@ -760,6 +766,30 @@ func truncate(s string, maxLen int) string {
 		return string(runes[:maxLen])
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+func shortenPathAfterFirstSlash(path string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if ansi.StringWidth(path) <= width {
+		return path
+	}
+	slash := strings.Index(path, "/")
+	if slash < 0 {
+		return ansi.Truncate(path, width, "...")
+	}
+
+	prefix := path[:slash+1] + "..."
+	prefixWidth := ansi.StringWidth(prefix)
+	if prefixWidth >= width {
+		return ansi.Truncate(prefix, width, "")
+	}
+
+	remainder := path[slash+1:]
+	tailWidth := width - prefixWidth
+	removeWidth := max(0, ansi.StringWidth(remainder)-tailWidth)
+	return prefix + ansi.TruncateLeft(remainder, removeWidth, "")
 }
 
 func fitLines(content string, height, width int) string {

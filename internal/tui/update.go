@@ -173,9 +173,9 @@ func (m Model) handleReadyKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.status = "Choose an AI runner."
 		}
 	case key.Matches(msg, m.keys.Up):
-		m.moveSelection(-1)
+		m.moveOrScrollLine(-1)
 	case key.Matches(msg, m.keys.Down):
-		m.moveSelection(1)
+		m.moveOrScrollLine(1)
 	case key.Matches(msg, m.keys.PageUp):
 		m.pageFocused(-1)
 	case key.Matches(msg, m.keys.PageDown):
@@ -198,6 +198,18 @@ func (m Model) handleReadyKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) moveOrScrollLine(delta int) {
+	if m.focus != panelRight {
+		m.moveSelection(delta)
+		return
+	}
+	if delta > 0 {
+		m.rightViewport.ScrollDown(delta)
+	} else {
+		m.rightViewport.ScrollUp(-delta)
+	}
 }
 
 func (m *Model) moveSelection(delta int) {
@@ -316,7 +328,7 @@ func (m *Model) ensureSelectedVisible(p panel) {
 		m.leftList.Select(m.currentLeftIndex())
 	case panelCenter:
 		m.syncViewportContent()
-		_, selectedLine := m.centerScrollStyledLines()
+		_, selectedLine := m.centerScrollStyledLines(m.centerViewport.Width())
 		if selectedLine >= 0 {
 			m.centerViewport.EnsureVisible(selectedLine, 0, 0)
 		}
@@ -430,7 +442,7 @@ func (m *Model) syncLeftList() {
 }
 
 func (m *Model) syncViewportContent() {
-	centerLines, selectedLine := m.centerScrollStyledLines()
+	centerLines, selectedLine := m.centerScrollStyledLines(m.centerViewport.Width())
 	m.centerViewport.SetContentLines(centerLines)
 	if selectedLine >= 0 {
 		m.centerViewport.EnsureVisible(selectedLine, 0, 0)
