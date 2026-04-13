@@ -3,8 +3,8 @@ package agent
 import "github.com/olekgolus11/SliceDiff/internal/diff"
 
 const (
-	SchemaVersion = "slicediff.slice.v1"
-	PromptVersion = "prompt.v1"
+	SchemaVersion = "slicediff.slice.v2"
+	PromptVersion = "prompt.v2"
 )
 
 type RunnerName string
@@ -29,13 +29,19 @@ type SliceSet struct {
 }
 
 type Slice struct {
-	ID         string    `json:"id" yaml:"id"`
-	Title      string    `json:"title" yaml:"title"`
-	Summary    string    `json:"summary" yaml:"summary"`
-	Category   string    `json:"category" yaml:"category"`
-	Confidence string    `json:"confidence" yaml:"confidence"`
-	Rationale  string    `json:"rationale" yaml:"rationale"`
-	HunkRefs   []HunkRef `json:"hunk_refs" yaml:"hunk_refs"`
+	ID           string        `json:"id" yaml:"id"`
+	Title        string        `json:"title" yaml:"title"`
+	Summary      string        `json:"summary" yaml:"summary"`
+	Category     string        `json:"category" yaml:"category"`
+	Confidence   string        `json:"confidence" yaml:"confidence"`
+	Rationale    string        `json:"rationale" yaml:"rationale"`
+	HunkRefs     []HunkRef     `json:"hunk_refs" yaml:"hunk_refs"`
+	ReadingSteps []ReadingStep `json:"reading_steps" yaml:"reading_steps"`
+}
+
+type ReadingStep struct {
+	HunkRef HunkRef `json:"hunk_ref" yaml:"hunk_ref"`
+	Body    string  `json:"body" yaml:"body"`
 }
 
 type HunkRef struct {

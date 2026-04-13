@@ -173,7 +173,7 @@ func (m Model) renderViewportPanel(title string, p panel, width, innerHeight int
 func (m Model) renderCenterPanel(title string, width, innerHeight int, focused bool) string {
 	bodyHeight := max(0, innerHeight-1)
 	bodyWidth := max(1, width-2)
-	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), min(bodyHeight, 8), bodyWidth)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), m.centerOverviewHeight(bodyHeight), bodyWidth)
 	overviewHeight := lipgloss.Height(overview)
 	remainingHeight := max(0, bodyHeight-overviewHeight)
 
@@ -186,6 +186,13 @@ func (m Model) renderCenterPanel(title string, width, innerHeight int, focused b
 		body = lipgloss.JoinVertical(lipgloss.Left, overview, scrolling)
 	}
 	return m.renderPanel(title, fitLines(body, bodyHeight, bodyWidth), width, innerHeight, focused)
+}
+
+func (m Model) centerOverviewHeight(bodyHeight int) int {
+	if m.mode == modeGrouped && m.slices != nil {
+		return min(bodyHeight, 12)
+	}
+	return min(bodyHeight, 8)
 }
 
 func (m Model) renderPanel(title, body string, width, innerHeight int, focused bool) string {
@@ -271,21 +278,16 @@ func (m Model) centerPlainLines() ([]string, int) {
 			"Summary:",
 		}...)
 		lines = append(lines, wrapWords(item.Summary, 80)...)
-		lines = append(lines, "", "Rationale:")
-		lines = append(lines, wrapWords(item.Rationale, 80)...)
-		lines = append(lines, "", "Files:")
-		for _, file := range uniqueFiles(item.HunkRefs) {
-			lines = append(lines, "  "+file)
-		}
-		lines = append(lines, "", "Hunks:")
+		lines = append(lines, "", "Reading order:")
 		selectedLine := -1
-		for i, ref := range item.HunkRefs {
+		for i, step := range item.ReadingSteps {
 			prefix := "  "
 			if i == m.selectedHunk {
 				prefix = "> "
 				selectedLine = len(lines)
 			}
-			lines = append(lines, prefix+ref.HunkID+" "+ref.FilePath)
+			lines = append(lines, prefix+step.Body)
+			lines = append(lines, "  > "+step.HunkRef.FilePath+"  "+step.HunkRef.HunkID)
 		}
 		return lines, selectedLine
 	}
@@ -339,16 +341,7 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 			"",
 			m.style.section.Render("Summary"),
 		)
-		lines = append(lines, limitLines(styledWrap(item.Summary, max(24, width), m.style.diffContext), 2)...)
-		lines = append(lines, "", m.style.section.Render("Rationale"))
-		lines = append(lines, limitLines(styledWrap(item.Rationale, max(24, width), m.style.diffContext), 2)...)
-		files := uniqueFiles(item.HunkRefs)
-		lines = append(lines, "", m.style.section.Render("Files"))
-		fileLine := strings.Join(files, ", ")
-		if len(files) == 1 && files[0] == "No files referenced." {
-			fileLine = files[0]
-		}
-		lines = append(lines, m.style.subtle.Render(ansi.Truncate(fileLine, width, "...")))
+		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.diffContext)...)
 		return lines
 	}
 
@@ -376,23 +369,20 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 		if item == nil {
 			return []string{m.callout("No selected slice.")}, -1
 		}
-		lines := []string{m.style.section.Render("Hunks")}
+		lines := []string{m.style.section.Render("Reading order")}
 		selectedLine := -1
-		for i, ref := range item.HunkRefs {
-			prefix := "  "
+		for i, step := range item.ReadingSteps {
+			bodyStyle := m.style.diffContext
+			pathStyle := m.style.subtle
 			if i == m.selectedHunk {
-				prefix = "> "
-			}
-			stem := prefix + ref.HunkID + "  "
-			path := shortenPathAfterFirstSlash(ref.FilePath, max(1, width-ansi.StringWidth(stem)))
-			line := stem + path
-			if i == m.selectedHunk {
-				line = m.style.diffSelected.Render(line)
+				bodyStyle = m.style.diffSelected
+				pathStyle = m.style.diffSelected
 				selectedLine = len(lines)
-			} else {
-				line = m.style.diffContext.Render(line)
 			}
-			lines = append(lines, line)
+			lines = append(lines, styledWrap(step.Body, max(24, width), bodyStyle)...)
+			stem := "  > " + step.HunkRef.HunkID + "  "
+			path := shortenPathAfterFirstSlash(step.HunkRef.FilePath, max(1, width-ansi.StringWidth(stem)))
+			lines = append(lines, pathStyle.Render(stem+path), "")
 		}
 		return lines, selectedLine
 	}

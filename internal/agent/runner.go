@@ -71,11 +71,13 @@ func Run(ctx context.Context, opts Options, pr github.PullRequest) (*SliceSet, e
 func BuildPrompt(runner RunnerName, pr github.PullRequest) ([]byte, error) {
 	payload := map[string]any{
 		"instructions": []string{
-			"You are grouping a single GitHub pull request into semantic review slices for navigation and understanding only.",
+			"You are grouping a single GitHub pull request into semantic review slices for navigation and guided reading only.",
 			"Do not write review comments, approval language, code-change requests, or suggestions to modify code.",
 			"Return JSON only. Do not wrap the JSON in markdown.",
 			"Every slice must reference one or more known hunk IDs.",
-			"Use the schema_version slicediff.slice.v1.",
+			"Every slice must include reading_steps with exactly one step per hunk_ref, in the same order.",
+			"Each reading step body should explain in 1-3 plain-language sentences what changed in that hunk and why it matters to the slice.",
+			"Use the schema_version slicediff.slice.v2.",
 		},
 		"required_output_shape": map[string]any{
 			"schema_version":   SchemaVersion,
@@ -172,7 +174,7 @@ func writeSchemaFile() (string, func(), error) {
   "additionalProperties": false,
   "required": ["schema_version", "runner", "prompt_version", "pr_head_sha", "slices", "unassigned_hunks", "warnings"],
   "properties": {
-    "schema_version": {"type": "string", "const": "slicediff.slice.v1"},
+    "schema_version": {"type": "string", "const": "slicediff.slice.v2"},
     "runner": {"type": "string"},
     "prompt_version": {"type": "string"},
     "pr_head_sha": {"type": "string"},
@@ -200,7 +202,7 @@ func writeSchemaFile() (string, func(), error) {
     "slice": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "summary", "category", "confidence", "rationale", "hunk_refs"],
+      "required": ["id", "title", "summary", "category", "confidence", "rationale", "hunk_refs", "reading_steps"],
       "properties": {
         "id": {"type": "string"},
         "title": {"type": "string"},
@@ -208,7 +210,17 @@ func writeSchemaFile() (string, func(), error) {
         "category": {"type": "string"},
         "confidence": {"type": "string"},
         "rationale": {"type": "string"},
-        "hunk_refs": {"type": "array", "items": {"$ref": "#/$defs/hunk_ref"}}
+        "hunk_refs": {"type": "array", "items": {"$ref": "#/$defs/hunk_ref"}},
+        "reading_steps": {"type": "array", "items": {"$ref": "#/$defs/reading_step"}}
+      }
+    },
+    "reading_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hunk_ref", "body"],
+      "properties": {
+        "hunk_ref": {"$ref": "#/$defs/hunk_ref"},
+        "body": {"type": "string"}
       }
     }
   }

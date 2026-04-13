@@ -62,9 +62,27 @@ func ValidateSliceSet(set *SliceSet, runner RunnerName, headSHA string, files []
 		if len(slice.HunkRefs) == 0 {
 			return fmt.Errorf("agent output slice %q has no hunk references", slice.ID)
 		}
-		for _, ref := range slice.HunkRefs {
+		if len(slice.ReadingSteps) != len(slice.HunkRefs) {
+			return fmt.Errorf("agent output slice %q must include one reading step per hunk reference", slice.ID)
+		}
+		seenStepHunks := map[string]bool{}
+		for i, ref := range slice.HunkRefs {
 			if _, ok := hunks[ref.HunkID]; !ok {
 				return fmt.Errorf("agent output references unknown hunk %q", ref.HunkID)
+			}
+			step := slice.ReadingSteps[i]
+			if strings.TrimSpace(step.Body) == "" {
+				return fmt.Errorf("agent output slice %q reading step %d is missing body", slice.ID, i+1)
+			}
+			if seenStepHunks[step.HunkRef.HunkID] {
+				return fmt.Errorf("agent output slice %q contains duplicate reading step hunk %q", slice.ID, step.HunkRef.HunkID)
+			}
+			seenStepHunks[step.HunkRef.HunkID] = true
+			if step.HunkRef.HunkID != ref.HunkID {
+				return fmt.Errorf("agent output slice %q reading step %d must reference hunk %q", slice.ID, i+1, ref.HunkID)
+			}
+			if _, ok := hunks[step.HunkRef.HunkID]; !ok {
+				return fmt.Errorf("agent output references unknown reading step hunk %q", step.HunkRef.HunkID)
 			}
 		}
 	}

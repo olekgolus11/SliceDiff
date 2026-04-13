@@ -237,13 +237,14 @@ func (m Model) reviewItems() []reviewItem {
 	items := make([]reviewItem, 0, len(m.slices.Slices)+1)
 	for _, slice := range m.slices.Slices {
 		items = append(items, reviewItem{
-			ID:         slice.ID,
-			Title:      slice.Title,
-			Category:   slice.Category,
-			Confidence: slice.Confidence,
-			Summary:    slice.Summary,
-			Rationale:  slice.Rationale,
-			HunkRefs:   slice.HunkRefs,
+			ID:           slice.ID,
+			Title:        slice.Title,
+			Category:     slice.Category,
+			Confidence:   slice.Confidence,
+			Summary:      slice.Summary,
+			Rationale:    slice.Rationale,
+			HunkRefs:     slice.HunkRefs,
+			ReadingSteps: slice.ReadingSteps,
 		})
 	}
 	if len(m.slices.UnassignedHunks) > 0 {
@@ -255,10 +256,22 @@ func (m Model) reviewItems() []reviewItem {
 			Summary:      "The AI runner did not confidently assign these hunks to a semantic slice.",
 			Rationale:    "SliceDiff keeps these hunks visible so no part of the PR is hidden.",
 			HunkRefs:     m.slices.UnassignedHunks,
+			ReadingSteps: fallbackReadingSteps(m.slices.UnassignedHunks),
 			IsUnassigned: true,
 		})
 	}
 	return items
+}
+
+func fallbackReadingSteps(refs []agent.HunkRef) []agent.ReadingStep {
+	steps := make([]agent.ReadingStep, 0, len(refs))
+	for _, ref := range refs {
+		steps = append(steps, agent.ReadingStep{
+			HunkRef: ref,
+			Body:    "This hunk was not confidently grouped by the AI runner, so read it directly against the diff.",
+		})
+	}
+	return steps
 }
 
 func (m Model) currentReviewItem() *reviewItem {

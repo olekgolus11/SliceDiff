@@ -49,6 +49,7 @@ type reviewItem struct {
 	Summary      string
 	Rationale    string
 	HunkRefs     []agent.HunkRef
+	ReadingSteps []agent.ReadingStep
 	IsUnassigned bool
 }
 

@@ -98,8 +98,8 @@ func TestUnassignedHunksRenderAsPseudoSlice(t *testing.T) {
 	}
 	m.selectedSlice = 2
 	center := strings.Join(m.centerLines(), "\n")
-	if !strings.Contains(center, "SliceDiff keeps these hunks visible") {
-		t.Fatalf("expected unassigned rationale in details, got:\n%s", center)
+	if !strings.Contains(center, "not confidently grouped") {
+		t.Fatalf("expected fallback reading step in details, got:\n%s", center)
 	}
 }
 
@@ -199,6 +199,20 @@ func TestCenterPanelKeepsOverviewVisibleWithSelectedHunk(t *testing.T) {
 	}
 }
 
+func TestCenterPanelShowsFullLongSummary(t *testing.T) {
+	m := testModel()
+	m.slices.Slices[0].Summary = "The authentication flow now shares the callback validator with the session refresh path so expired tokens fail consistently. It also keeps the retry copy close to the underlying GitHub CLI error for clearer recovery. The final bit updates the cache guard so stale grouped hunks do not hide new diff content."
+	m.syncComponents()
+
+	panel := m.renderCenterPanel(m.centerTitle(), 80, 22, true)
+	if !strings.Contains(panel, "The final bit") || !strings.Contains(panel, "updates the cache guard") {
+		t.Fatalf("expected full summary to remain visible, got:\n%s", panel)
+	}
+	if strings.Contains(panel, "recovery...") {
+		t.Fatalf("expected summary not to be capped with ellipsis, got:\n%s", panel)
+	}
+}
+
 func TestShortenPathAfterFirstSlash(t *testing.T) {
 	fits := "composeApp/src/file.kt"
 	if got := shortenPathAfterFirstSlash(fits, 80); got != fits {
@@ -224,20 +238,42 @@ func TestShortenPathAfterFirstSlash(t *testing.T) {
 	}
 }
 
-func TestGroupedDetailsHunkRowsElideLongFilePaths(t *testing.T) {
+func TestGroupedDetailsReadingStepsRenderNarrativeAndElideLongFilePaths(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped
 	m.slices.Slices[0].HunkRefs[0].FilePath = "composeApp/src/commonMain/kotlin/com/farmermarket/kmp/products/presentation/seller_details.kt"
+	m.slices.Slices[0].ReadingSteps[0].HunkRef.FilePath = m.slices.Slices[0].HunkRefs[0].FilePath
 
 	lines, _ := m.centerScrollStyledLines(58)
 	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "Reading order") || !strings.Contains(rendered, "First hunk explains the state change.") {
+		t.Fatalf("expected guided reading prose in details, got:\n%s", rendered)
+	}
 	if !strings.Contains(rendered, "composeApp/...") {
-		t.Fatalf("expected elided path in hunk rows, got:\n%s", rendered)
+		t.Fatalf("expected elided path in reading step source, got:\n%s", rendered)
 	}
 	for _, line := range lines {
 		if width := lipgloss.Width(line); width > 58 {
 			t.Fatalf("expected line width <= 58, got %d: %q", width, line)
 		}
+	}
+}
+
+func TestGroupedReadingStepSelectionDrivesRightDiff(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.focus = panelCenter
+	m.selectedHunk = 0
+
+	first := strings.Join(m.rightLines(), "\n")
+	if !strings.Contains(first, "+a") && !strings.Contains(first, "+ a") {
+		t.Fatalf("expected first selected step to show first hunk diff, got:\n%s", first)
+	}
+
+	m.moveSelection(1)
+	second := strings.Join(m.rightLines(), "\n")
+	if !strings.Contains(second, "+b") && !strings.Contains(second, "+ b") {
+		t.Fatalf("expected second selected step to show second hunk diff, got:\n%s", second)
 	}
 }
 
@@ -447,8 +483,36 @@ func testModel() Model {
 		PromptVersion: agent.PromptVersion,
 		PRHeadSHA:     "sha",
 		Slices: []agent.Slice{
-			{ID: "s1", Title: "First", Summary: "First summary.", Category: "feature", Confidence: "high", Rationale: "First rationale.", HunkRefs: []agent.HunkRef{{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}, {HunkID: "h2", FilePath: "main.go", Header: "@@ -2 +2 @@"}, {HunkID: "h3", FilePath: "main.go", Header: "@@ -3 +3 @@"}}},
-			{ID: "s2", Title: "Second", Summary: "Second summary.", Category: "tests", Confidence: "medium", Rationale: "Second rationale.", HunkRefs: []agent.HunkRef{{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}}},
+			{
+				ID:         "s1",
+				Title:      "First",
+				Summary:    "First summary.",
+				Category:   "feature",
+				Confidence: "high",
+				Rationale:  "First rationale.",
+				HunkRefs: []agent.HunkRef{
+					{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"},
+					{HunkID: "h2", FilePath: "main.go", Header: "@@ -2 +2 @@"},
+					{HunkID: "h3", FilePath: "main.go", Header: "@@ -3 +3 @@"},
+				},
+				ReadingSteps: []agent.ReadingStep{
+					{HunkRef: agent.HunkRef{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}, Body: "First hunk explains the state change."},
+					{HunkRef: agent.HunkRef{HunkID: "h2", FilePath: "main.go", Header: "@@ -2 +2 @@"}, Body: "Second hunk propagates that change to the next layer."},
+					{HunkRef: agent.HunkRef{HunkID: "h3", FilePath: "main.go", Header: "@@ -3 +3 @@"}, Body: "Third hunk completes the flow for callers."},
+				},
+			},
+			{
+				ID:         "s2",
+				Title:      "Second",
+				Summary:    "Second summary.",
+				Category:   "tests",
+				Confidence: "medium",
+				Rationale:  "Second rationale.",
+				HunkRefs:   []agent.HunkRef{{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}},
+				ReadingSteps: []agent.ReadingStep{
+					{HunkRef: agent.HunkRef{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}, Body: "The test hunk covers the updated behavior."},
+				},
+			},
 		},
 		UnassignedHunks: []agent.HunkRef{{HunkID: "h2", FilePath: "main.go", Header: "@@ -2 +2 @@"}},
 	}
