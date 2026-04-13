@@ -1,27 +1,37 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	"strings"
+
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var spinnerCmd tea.Cmd
+	m.spinner, spinnerCmd = m.spinner.Update(msg)
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
+		return m.synced(spinnerCmd)
 	case loadPRMsg:
 		if msg.err != nil {
 			m.stage = stageFatal
 			m.setAppError(msg.err)
 			m.status = m.errorSummary("Could not load PR.")
-			return m, nil
+			return m.synced(spinnerCmd)
 		}
 		m.pr = msg.pr
 		m.clearError()
 		m.status = "PR loaded."
-		return m.maybeStartAI()
+		next, cmd := m.maybeStartAI()
+		return next.synced(spinnerCmd, cmd)
 	case cacheMsg:
 		runner := m.selectedRunner()
 		if msg.hit && msg.err == nil {
@@ -31,10 +41,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.stage = stageReady
 				m.aiBusy = false
 				m.status = "Loaded cached semantic slices."
-				return m, nil
+				return m.synced(spinnerCmd)
 			}
 		}
-		return m.startAgent(runner)
+		next, cmd := m.startAgent(runner)
+		return next.synced(spinnerCmd, cmd)
 	case agentMsg:
 		m.aiBusy = false
 		if msg.err != nil {
@@ -42,27 +53,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stage = stageReady
 			m.setAppError(msg.err)
 			m.status = m.errorSummary("AI grouping failed. Showing raw diff.")
-			return m, nil
+			return m.synced(spinnerCmd)
 		}
 		m.slices = msg.slices
 		m.mode = modeGrouped
 		m.stage = stageReady
 		m.selectedSlice = 0
 		m.selectedHunk = 0
-		m.leftScroll = 0
-		m.centerScroll = 0
-		m.rightScroll = 0
+		m.resetScrolls()
 		m.clearError()
 		m.status = "Semantic slices ready."
 		key := m.cacheKey(agent.RunnerName(msg.slices.Runner))
-		return m, writeCacheCmd(m.opts.Config, key, msg.slices)
-	case tea.KeyMsg:
-		return m.handleKey(msg)
+		return m.synced(spinnerCmd, writeCacheCmd(m.opts.Config, key, msg.slices))
+	case tea.KeyPressMsg:
+		next, cmd := m.handleKey(msg)
+		return next.synced(spinnerCmd, cmd)
+	case tea.MouseClickMsg:
+		m.handleMouseClick(msg.Mouse())
+		return m.synced(spinnerCmd)
+	case tea.MouseWheelMsg:
+		m.handleMouseWheel(msg.Mouse())
+		return m.synced(spinnerCmd)
+	case spinner.TickMsg:
+		return m.synced(spinnerCmd)
 	}
-	return m, nil
+	return m.synced(spinnerCmd)
 }
 
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch m.stage {
 	case stageConsent:
 		return m.handleConsentKey(msg)
@@ -71,17 +89,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case stageReady:
 		return m.handleReadyKey(msg)
 	case stageFatal:
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
+		if key.Matches(msg, m.keys.Quit) {
 			return m, tea.Quit
 		}
 	}
-	if msg.String() == "ctrl+c" {
+	if key.Matches(msg, m.keys.Quit) {
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-func (m Model) handleConsentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleConsentKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		_ = m.opts.Config.SetConsent(true)
@@ -97,42 +115,43 @@ func (m Model) handleConsentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeRaw
 		m.status = "AI consent declined. Showing raw diff."
 		return m, nil
-	case "q", "ctrl+c":
+	}
+	if key.Matches(msg, m.keys.Quit) {
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-func (m Model) handleRunnerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "up", "k", "down", "j":
+func (m Model) handleRunnerKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Up, m.keys.Down):
 		if m.selectedSetup == 0 {
 			m.selectedSetup = 1
 		} else {
 			m.selectedSetup = 0
 		}
-	case "enter":
+	case key.Matches(msg, m.keys.Enter):
 		runner := agent.RunnerCodex
 		if m.selectedSetup == 1 {
 			runner = agent.RunnerOpenCode
 		}
 		_ = m.opts.Config.SetRunner(string(runner))
 		return m.startAgent(runner)
-	case "q", "ctrl+c":
+	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
-func (m Model) handleReadyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "ctrl+c":
+func (m Model) handleReadyKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
-	case "tab":
+	case key.Matches(msg, m.keys.Tab):
 		m.focus = (m.focus + 1) % 3
-	case "?":
+	case key.Matches(msg, m.keys.Help):
 		m.showHelp = !m.showHelp
-	case "v":
+	case key.Matches(msg, m.keys.View):
 		if m.mode == modeGrouped && m.slices != nil {
 			m.mode = modeRaw
 			m.selectedHunk = 0
@@ -144,7 +163,7 @@ func (m Model) handleReadyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resetScrolls()
 			m.status = "Grouped slice view."
 		}
-	case "r":
+	case key.Matches(msg, m.keys.Regen):
 		if !m.opts.NoAI && m.pr != nil {
 			runner := m.selectedRunner()
 			if runner != "" {
@@ -153,27 +172,27 @@ func (m Model) handleReadyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.stage = stageRunner
 			m.status = "Choose an AI runner."
 		}
-	case "up", "k":
+	case key.Matches(msg, m.keys.Up):
 		m.moveSelection(-1)
-	case "down", "j":
+	case key.Matches(msg, m.keys.Down):
 		m.moveSelection(1)
-	case "pgup":
+	case key.Matches(msg, m.keys.PageUp):
 		m.pageFocused(-1)
-	case "pgdown":
+	case key.Matches(msg, m.keys.PageDown):
 		m.pageFocused(1)
-	case "home":
+	case key.Matches(msg, m.keys.Home):
 		m.homeFocused()
-	case "end":
+	case key.Matches(msg, m.keys.End):
 		m.endFocused()
-	case "left", "h":
+	case key.Matches(msg, m.keys.Left):
 		if m.focus > panelLeft {
 			m.focus--
 		}
-	case "right", "l":
+	case key.Matches(msg, m.keys.Right):
 		if m.focus < panelRight {
 			m.focus++
 		}
-	case "enter":
+	case key.Matches(msg, m.keys.Enter):
 		if m.focus < panelRight {
 			m.focus++
 		}
@@ -189,8 +208,8 @@ func (m *Model) moveSelection(delta int) {
 			m.selectedSlice = clamp(m.selectedSlice+delta, 0, len(m.reviewItems())-1)
 			if m.selectedSlice != before {
 				m.selectedHunk = 0
-				m.centerScroll = 0
-				m.rightScroll = 0
+				m.centerViewport.GotoTop()
+				m.rightViewport.GotoTop()
 			}
 			m.ensureSelectedVisible(panelLeft)
 		default:
@@ -205,10 +224,13 @@ func (m *Model) moveSelection(delta int) {
 	switch m.focus {
 	case panelLeft:
 		if m.pr != nil {
+			before := m.selectedFile
 			m.selectedFile = clamp(m.selectedFile+delta, 0, len(m.pr.Files)-1)
-			m.selectedHunk = 0
-			m.centerScroll = 0
-			m.rightScroll = 0
+			if m.selectedFile != before {
+				m.selectedHunk = 0
+				m.centerViewport.GotoTop()
+				m.rightViewport.GotoTop()
+			}
 			m.ensureSelectedVisible(panelLeft)
 		}
 	default:
@@ -226,9 +248,17 @@ func (m *Model) pageFocused(direction int) {
 	case panelLeft:
 		m.moveSelection(direction * page)
 	case panelCenter:
-		m.centerScroll = clamp(m.centerScroll+(direction*page), 0, max(0, len(m.centerLines())-page))
+		if direction > 0 {
+			m.centerViewport.PageDown()
+		} else {
+			m.centerViewport.PageUp()
+		}
 	case panelRight:
-		m.rightScroll = clamp(m.rightScroll+(direction*page), 0, max(0, len(m.rightLines())-page))
+		if direction > 0 {
+			m.rightViewport.PageDown()
+		} else {
+			m.rightViewport.PageUp()
+		}
 	}
 }
 
@@ -241,12 +271,12 @@ func (m *Model) homeFocused() {
 			m.selectedFile = 0
 		}
 		m.selectedHunk = 0
-		m.leftScroll = 0
+		m.leftList.GoToStart()
 	case panelCenter:
-		m.centerScroll = 0
+		m.centerViewport.GotoTop()
 		m.selectedHunk = 0
 	case panelRight:
-		m.rightScroll = 0
+		m.rightViewport.GotoTop()
 	}
 }
 
@@ -270,52 +300,152 @@ func (m *Model) endFocused() {
 		}
 		m.ensureSelectedVisible(panelCenter)
 	case panelRight:
-		lines := m.rightLines()
-		m.rightScroll = max(0, len(lines)-m.focusVisibleLines())
+		m.rightViewport.GotoBottom()
 	}
 }
 
 func (m *Model) resetScrolls() {
-	m.leftScroll = 0
-	m.centerScroll = 0
-	m.rightScroll = 0
+	m.leftList.GoToStart()
+	m.centerViewport.GotoTop()
+	m.rightViewport.GotoTop()
 }
 
 func (m *Model) ensureSelectedVisible(p panel) {
-	visible := max(1, m.focusVisibleLines())
 	switch p {
 	case panelLeft:
-		selected := m.selectedFile
-		if m.mode == modeGrouped {
-			selected = m.selectedSlice
-		}
-		m.leftScroll = ensureVisible(m.leftScroll, selected, visible)
+		m.leftList.Select(m.currentLeftIndex())
 	case panelCenter:
-		m.centerScroll = ensureVisible(m.centerScroll, m.selectedHunk, visible)
+		m.syncViewportContent()
+		_, selectedLine := m.centerScrollStyledLines()
+		if selectedLine >= 0 {
+			m.centerViewport.EnsureVisible(selectedLine, 0, 0)
+		}
 	case panelRight:
-		m.rightScroll = ensureVisible(m.rightScroll, m.selectedHunk, visible)
+		m.rightViewport.EnsureVisible(m.selectedHunk, 0, 0)
 	}
 }
 
-func ensureVisible(scroll, selected, visible int) int {
-	if selected < scroll {
-		return selected
+func (m *Model) handleMouseClick(mouse tea.Mouse) {
+	if m.stage != stageReady {
+		return
 	}
-	if selected >= scroll+visible {
-		return selected - visible + 1
+	headerHeight := lipglossHeight(m.renderHeader())
+	if mouse.Y < headerHeight {
+		return
 	}
-	return scroll
+	bodyHeight := max(1, m.height-headerHeight-lipglossHeight(m.renderFooter()))
+	relY := mouse.Y - headerHeight
+	if relY >= bodyHeight {
+		return
+	}
+	if shouldStack(m.width, bodyHeight) {
+		total := max(9, bodyHeight)
+		top := total / 3
+		mid := total / 3
+		switch {
+		case relY < top:
+			m.focus = panelLeft
+		case relY < top+mid:
+			m.focus = panelCenter
+		default:
+			m.focus = panelRight
+		}
+		return
+	}
+	leftW, centerW, _ := weightedWidths(m.width, []int{1, 2, 2})
+	switch {
+	case mouse.X < leftW:
+		m.focus = panelLeft
+	case mouse.X < leftW+centerW:
+		m.focus = panelCenter
+	default:
+		m.focus = panelRight
+	}
+}
+
+func (m *Model) handleMouseWheel(mouse tea.Mouse) {
+	if m.stage != stageReady {
+		return
+	}
+	switch mouse.Button {
+	case tea.MouseWheelUp:
+		m.pageFocused(-1)
+	case tea.MouseWheelDown:
+		m.pageFocused(1)
+	}
+}
+
+func (m Model) synced(cmds ...tea.Cmd) (tea.Model, tea.Cmd) {
+	m.syncComponents()
+	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) syncComponents() {
+	m.syncComponentSizes()
+	m.syncLeftList()
+	m.syncViewportContent()
+	m.leftList.Select(m.currentLeftIndex())
+}
+
+func (m *Model) syncComponentSizes() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+	contentHeight := max(1, m.height-lipglossHeight(m.renderHeader())-lipglossHeight(m.renderFooter()))
+	if shouldStack(m.width, contentHeight) {
+		total := max(9, contentHeight)
+		top := total / 3
+		mid := total / 3
+		bottom := total - top - mid
+		m.setComponentSizes(m.width, max(1, top-2), m.width, max(1, mid-2), m.width, max(1, bottom-2))
+		return
+	}
+	leftW, centerW, rightW := weightedWidths(m.width, []int{1, 2, 2})
+	innerHeight := max(1, contentHeight-2)
+	m.setComponentSizes(leftW, innerHeight, centerW, innerHeight, rightW, innerHeight)
+}
+
+func (m *Model) setComponentSizes(leftW, leftInnerH, centerW, centerInnerH, rightW, rightInnerH int) {
+	leftBodyH := max(0, leftInnerH-1)
+	leftBodyW := max(1, leftW-2)
+	m.leftList.SetSize(leftBodyW, leftBodyH)
+
+	centerBodyH := max(0, centerInnerH-1)
+	centerBodyW := max(1, centerW-2)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(centerBodyW), "\n"), min(centerBodyH, 8), centerBodyW)
+	m.centerViewport.SetWidth(centerBodyW)
+	m.centerViewport.SetHeight(max(0, centerBodyH-lipgloss.Height(overview)))
+
+	m.rightViewport.SetWidth(max(1, rightW-2))
+	m.rightViewport.SetHeight(max(0, rightInnerH-1))
+}
+
+func (m *Model) syncLeftList() {
+	items := m.leftItems()
+	listItems := make([]list.Item, 0, len(items))
+	for _, item := range items {
+		listItems = append(listItems, item)
+	}
+	_ = m.leftList.SetItems(listItems)
+}
+
+func (m *Model) syncViewportContent() {
+	centerLines, selectedLine := m.centerScrollStyledLines()
+	m.centerViewport.SetContentLines(centerLines)
+	if selectedLine >= 0 {
+		m.centerViewport.EnsureVisible(selectedLine, 0, 0)
+	}
+	m.rightViewport.SetContentLines(m.rightStyledLines())
 }
 
 func (m Model) focusVisibleLines() int {
-	width, height := m.panelSize(m.focus)
-	_ = width
+	_, height := m.panelSize(m.focus)
 	return max(1, height-3)
 }
 
 func (m Model) panelSize(p panel) (int, int) {
-	titleHeight := 2
-	statusHeight := 1
+	titleHeight := lipglossHeight(m.renderHeader())
+	statusHeight := lipglossHeight(m.renderFooter())
 	contentHeight := max(1, m.height-titleHeight-statusHeight)
 	if shouldStack(m.width, contentHeight) {
 		total := max(9, contentHeight)
@@ -347,6 +477,10 @@ func (m Model) errorSummary(fallback string) string {
 		return fallback
 	}
 	return m.appErr.Summary
+}
+
+func lipglossHeight(s string) int {
+	return max(1, lipgloss.Height(s))
 }
 
 func clamp(v, min, max int) int {

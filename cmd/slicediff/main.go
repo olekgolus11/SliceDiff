@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/olekgolus11/SliceDiff/internal/config"
 	"github.com/olekgolus11/SliceDiff/internal/github"
 	"github.com/olekgolus11/SliceDiff/internal/tui"
@@ -49,7 +49,7 @@ func main() {
 		Version:        version,
 	})
 
-	if _, err := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+	if _, err := tea.NewProgram(model).Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "slicediff failed: %v\n", err)
 		os.Exit(1)
 	}

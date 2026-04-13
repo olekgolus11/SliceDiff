@@ -4,69 +4,123 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 	"github.com/olekgolus11/SliceDiff/internal/diff"
 )
 
-func (m Model) View() string {
-	if m.width == 0 {
-		return "SliceDiff loading..."
+func (m Model) View() tea.View {
+	content := "SliceDiff loading..."
+	if m.width > 0 {
+		switch m.stage {
+		case stageLoading:
+			content = m.renderFrame("Loading pull request...", []string{"Validating gh auth status", "Fetching PR metadata and diff"})
+		case stageConsent:
+			content = m.renderFrame("AI consent", []string{
+				"SliceDiff can send PR metadata and structured diff hunks to your selected agent runner.",
+				"Press y to allow AI grouping, or n to use raw diff navigation only.",
+			})
+		case stageRunner:
+			content = m.renderRunnerPicker()
+		case stageFatal:
+			content = m.renderFrame("Could not start SliceDiff", append(m.errorLines(), "Press q to quit."))
+		case stageReady:
+			content = m.renderMain()
+		}
 	}
-	switch m.stage {
-	case stageLoading:
-		return m.renderFrame("Loading pull request...", []string{"Validating gh auth status", "Fetching PR metadata and diff"})
-	case stageConsent:
-		return m.renderFrame("AI consent", []string{
-			"SliceDiff can send PR metadata and structured diff hunks to your selected agent runner.",
-			"Press y to allow AI grouping, or n to use raw diff navigation only.",
-		})
-	case stageRunner:
-		return m.renderRunnerPicker()
-	case stageFatal:
-		return m.renderFrame("Could not start SliceDiff", append(m.errorLines(), "Press q to quit."))
-	case stageReady:
-		return m.renderMain()
-	default:
-		return ""
-	}
+
+	view := tea.NewView(content)
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeCellMotion
+	view.WindowTitle = "SliceDiff"
+	return view
 }
 
 func (m Model) renderMain() string {
-	title := m.renderTitle()
-	status := m.renderStatus()
-	contentHeight := max(1, m.height-lipgloss.Height(title)-lipgloss.Height(status))
+	header := m.renderHeader()
+	footer := m.renderFooter()
+	contentHeight := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
 	body := m.renderPanels(m.width, contentHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, title, body, status)
+	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return m.style.app.Width(m.width).Height(m.height).Render(screen)
 }
 
-func (m Model) renderTitle() string {
+func (m Model) renderHeader() string {
 	name := "SliceDiff"
+	meta := "waiting for PR metadata"
 	if m.pr != nil {
-		name = fmt.Sprintf("SliceDiff - %s/%s#%d", m.pr.Owner, m.pr.Repo, m.pr.Number)
+		name = fmt.Sprintf("%s/%s#%d", m.pr.Owner, m.pr.Repo, m.pr.Number)
+		meta = m.prTitle()
 	}
+
 	mode := "raw"
 	if m.mode == modeGrouped {
 		mode = "grouped"
 	}
-	line1 := truncate(name, m.width)
-	line2 := truncate(fmt.Sprintf("mode=%s runner=%s %s", mode, m.runnerLabel(), m.prTitle()), m.width)
-	return lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render(line1),
-		lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(line2),
+
+	counts := m.headerCounts()
+	line1 := lipgloss.JoinHorizontal(lipgloss.Center,
+		m.style.headerTitle.Render("SliceDiff"),
+		"  ",
+		m.style.emphasis.Render(truncate(name, max(10, m.width/3))),
+		"  ",
+		m.style.chipHot.Render(mode),
+		" ",
+		m.style.chipCool.Render("runner "+m.runnerLabel()),
+		" ",
+		m.style.chip.Render(counts),
 	)
+	line1 = ansi.Truncate(line1, m.width, "...")
+	line2 := m.style.headerMeta.Render(truncate(meta, max(1, m.width-2)))
+	line2 = ansi.Truncate(line2, m.width, "...")
+	return m.style.header.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
 }
 
-func (m Model) renderStatus() string {
-	help := "tab focus | j/k move | pg scroll | home/end | v view | r regen | ? help | q quit"
-	if m.showHelp {
-		help = "Grouped: left selects slices, center/right select hunks. Raw: left selects files, center/right select hunks."
+func (m Model) headerCounts() string {
+	if m.pr == nil {
+		return "loading"
 	}
-	text := truncate(m.status+" | "+help, m.width)
+	files := len(m.pr.Files)
+	hunks := 0
+	generated := 0
+	binary := 0
+	for _, file := range m.pr.Files {
+		hunks += len(file.Hunks)
+		if file.IsGenerated {
+			generated++
+		}
+		if file.IsBinary {
+			binary++
+		}
+	}
+	if m.mode == modeGrouped && m.slices != nil {
+		return fmt.Sprintf("%d slices / %d files / %d hunks", len(m.reviewItems()), files, hunks)
+	}
+	extras := ""
+	if generated > 0 || binary > 0 {
+		extras = fmt.Sprintf(" / %d gen / %d bin", generated, binary)
+	}
+	return fmt.Sprintf("%d files / %d hunks%s", files, hunks, extras)
+}
+
+func (m Model) renderFooter() string {
+	status := m.status
 	if m.appErr != nil {
-		text = truncate(m.appErr.Summary+" | "+help, m.width)
+		status = m.appErr.Summary
 	}
-	return statusStyle(m.width).Render(text)
+	statusText := m.style.status.Render(truncate(status, max(1, m.width/3)))
+	helpModel := m.help
+	helpModel.ShowAll = m.showHelp
+	helpModel.SetWidth(max(1, m.width-lipgloss.Width(statusText)-3))
+	helpText := helpModel.View(m.keys)
+	line := lipgloss.JoinHorizontal(lipgloss.Top,
+		statusText,
+		m.style.subtle.Render(" | "),
+		helpText,
+	)
+	return m.style.footer.Width(m.width).Render(fitLines(line, max(1, lipgloss.Height(line)), m.width))
 }
 
 func (m Model) renderPanels(width, height int) string {
@@ -75,9 +129,9 @@ func (m Model) renderPanels(width, height int) string {
 	}
 	leftW, centerW, rightW := weightedWidths(width, []int{1, 2, 2})
 	innerHeight := max(1, height-2)
-	left := m.renderPanel(m.leftTitle(), m.leftLines(), leftW, innerHeight, m.focus == panelLeft, m.leftScroll)
-	center := m.renderPanel(m.centerTitle(), m.centerLines(), centerW, innerHeight, m.focus == panelCenter, m.centerScroll)
-	right := m.renderPanel(m.rightTitle(), m.rightLines(), rightW, innerHeight, m.focus == panelRight, m.rightScroll)
+	left := m.renderListPanel(m.leftTitle(), leftW, innerHeight, m.focus == panelLeft)
+	center := m.renderCenterPanel(m.centerTitle(), centerW, innerHeight, m.focus == panelCenter)
+	right := m.renderViewportPanel(m.rightTitle(), panelRight, rightW, innerHeight, m.focus == panelRight)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
 }
 
@@ -86,73 +140,127 @@ func (m Model) renderStacked(width, height int) string {
 	top := total / 3
 	mid := total / 3
 	bottom := total - top - mid
-	left := m.renderPanel(m.leftTitle(), m.leftLines(), width, max(1, top-2), m.focus == panelLeft, m.leftScroll)
-	center := m.renderPanel(m.centerTitle(), m.centerLines(), width, max(1, mid-2), m.focus == panelCenter, m.centerScroll)
-	right := m.renderPanel(m.rightTitle(), m.rightLines(), width, max(1, bottom-2), m.focus == panelRight, m.rightScroll)
+	left := m.renderListPanel(m.leftTitle(), width, max(1, top-2), m.focus == panelLeft)
+	center := m.renderCenterPanel(m.centerTitle(), width, max(1, mid-2), m.focus == panelCenter)
+	right := m.renderViewportPanel(m.rightTitle(), panelRight, width, max(1, bottom-2), m.focus == panelRight)
 	return lipgloss.JoinVertical(lipgloss.Left, left, center, right)
 }
 
-func (m Model) renderPanel(title string, lines []string, width, innerHeight int, focused bool, scroll int) string {
-	innerWidth := max(1, width-4)
-	out := make([]string, 0, innerHeight)
-	out = append(out, truncate(title, innerWidth))
-	visible := max(0, innerHeight-1)
-	scroll = clamp(scroll, 0, max(0, len(lines)-visible))
-	for _, line := range lines[scroll:] {
-		if len(out) >= innerHeight {
-			break
-		}
-		out = append(out, truncate(line, innerWidth))
-	}
-	for len(out) < innerHeight {
-		out = append(out, "")
-	}
-	return panelStyle(focused, width).Render(strings.Join(out, "\n"))
+func (m Model) renderListPanel(title string, width, innerHeight int, focused bool) string {
+	bodyHeight := max(0, innerHeight-1)
+	bodyWidth := max(1, width-2)
+	listModel := m.leftList
+	listModel.SetSize(bodyWidth, bodyHeight)
+	listModel.Select(m.currentLeftIndex())
+	body := fitLines(listModel.View(), bodyHeight, bodyWidth)
+	return m.renderPanel(title, body, width, innerHeight, focused)
 }
 
-func (m Model) leftLines() []string {
+func (m Model) renderViewportPanel(title string, p panel, width, innerHeight int, focused bool) string {
+	bodyHeight := max(0, innerHeight-1)
+	bodyWidth := max(1, width-2)
+	viewportModel := m.centerViewport
+	if p == panelRight {
+		viewportModel = m.rightViewport
+	}
+	viewportModel.SetWidth(bodyWidth)
+	viewportModel.SetHeight(bodyHeight)
+	body := fitLines(viewportModel.View(), bodyHeight, bodyWidth)
+	return m.renderPanel(title, body, width, innerHeight, focused)
+}
+
+func (m Model) renderCenterPanel(title string, width, innerHeight int, focused bool) string {
+	bodyHeight := max(0, innerHeight-1)
+	bodyWidth := max(1, width-2)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), min(bodyHeight, 8), bodyWidth)
+	overviewHeight := lipgloss.Height(overview)
+	remainingHeight := max(0, bodyHeight-overviewHeight)
+
+	viewportModel := m.centerViewport
+	viewportModel.SetWidth(bodyWidth)
+	viewportModel.SetHeight(remainingHeight)
+	scrolling := fitLines(viewportModel.View(), remainingHeight, bodyWidth)
+	body := overview
+	if remainingHeight > 0 {
+		body = lipgloss.JoinVertical(lipgloss.Left, overview, scrolling)
+	}
+	return m.renderPanel(title, fitLines(body, bodyHeight, bodyWidth), width, innerHeight, focused)
+}
+
+func (m Model) renderPanel(title, body string, width, innerHeight int, focused bool) string {
+	contentWidth := max(1, width-2)
+	titleLine := m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "..."))
+	content := lipgloss.JoinVertical(lipgloss.Left, titleLine, fitLines(body, max(0, innerHeight-1), contentWidth))
+	return panelStyle(m.style, focused, width).Render(content)
+}
+
+func (m Model) leftItems() []navigationItem {
 	if m.mode == modeGrouped && m.slices != nil {
 		items := m.reviewItems()
 		if len(items) == 0 {
-			return []string{"No semantic slices returned.", "Press v for raw diff view.", "Press r to regenerate slices."}
+			return []navigationItem{{kind: navigationSlice, title: "No semantic slices", description: "Press v for raw diff or r to regenerate."}}
 		}
-		lines := make([]string, 0, len(items))
+		nav := make([]navigationItem, 0, len(items))
 		for i, item := range items {
-			label := fmt.Sprintf("%d. %s", i+1, item.Title)
+			desc := fmt.Sprintf("%s / %s confidence / %d hunks", item.Category, item.Confidence, len(item.HunkRefs))
 			if item.IsUnassigned {
-				label += fmt.Sprintf(" (%d)", len(item.HunkRefs))
+				desc = fmt.Sprintf("uncertain / needs review / %d hunks", len(item.HunkRefs))
 			}
-			if i == m.selectedSlice {
-				label = "> " + label
-			} else {
-				label = "  " + label
-			}
-			lines = append(lines, label)
+			nav = append(nav, navigationItem{
+				kind:        navigationSlice,
+				index:       i,
+				title:       fmt.Sprintf("%02d  %s", i+1, item.Title),
+				description: desc,
+			})
 		}
-		return lines
+		return nav
 	}
 	if m.pr == nil || len(m.pr.Files) == 0 {
-		return []string{"No files changed in this PR."}
+		return []navigationItem{{kind: navigationFile, title: "No files changed", description: "This PR has no parsed diff files."}}
 	}
-	lines := make([]string, 0, len(m.pr.Files))
+	nav := make([]navigationItem, 0, len(m.pr.Files))
 	for i, file := range m.pr.Files {
-		label := fmt.Sprintf("%s %s (%d)", file.Status, file.Path, len(file.Hunks))
-		if i == m.selectedFile {
-			label = "> " + label
-		} else {
-			label = "  " + label
+		flags := []string{file.Status, fmt.Sprintf("%d hunks", len(file.Hunks))}
+		if file.IsGenerated {
+			flags = append(flags, "generated")
 		}
-		lines = append(lines, label)
+		if file.IsBinary {
+			flags = append(flags, "binary")
+		}
+		nav = append(nav, navigationItem{
+			kind:        navigationFile,
+			index:       i,
+			title:       file.Path,
+			description: strings.Join(flags, " / "),
+		})
+	}
+	return nav
+}
+
+func (m Model) leftLines() []string {
+	items := m.leftItems()
+	lines := make([]string, 0, len(items))
+	for i, item := range items {
+		prefix := "  "
+		if i == m.currentLeftIndex() {
+			prefix = "> "
+		}
+		lines = append(lines, prefix+item.title)
 	}
 	return lines
 }
 
 func (m Model) centerLines() []string {
+	lines, _ := m.centerPlainLines()
+	return lines
+}
+
+func (m Model) centerPlainLines() ([]string, int) {
 	prefix := m.errorLines()
 	if m.mode == modeGrouped && m.slices != nil {
 		item := m.currentReviewItem()
 		if item == nil {
-			return append(prefix, "No selected slice.")
+			return append(prefix, "No selected slice."), -1
 		}
 		lines := append(prefix, []string{
 			"Title: " + item.Title,
@@ -169,18 +277,20 @@ func (m Model) centerLines() []string {
 			lines = append(lines, "  "+file)
 		}
 		lines = append(lines, "", "Hunks:")
+		selectedLine := -1
 		for i, ref := range item.HunkRefs {
 			prefix := "  "
 			if i == m.selectedHunk {
 				prefix = "> "
+				selectedLine = len(lines)
 			}
 			lines = append(lines, prefix+ref.HunkID+" "+ref.FilePath)
 		}
-		return lines
+		return lines, selectedLine
 	}
 	file := m.currentFile()
 	if file == nil {
-		return append(prefix, "No selected file.")
+		return append(prefix, "No selected file."), -1
 	}
 	if file.IsBinary {
 		return append(prefix, []string{
@@ -189,7 +299,7 @@ func (m Model) centerLines() []string {
 			"Binary: true",
 			"",
 			"Binary files do not include line hunks in the unified diff.",
-		}...)
+		}...), -1
 	}
 	lines := append(prefix, []string{
 		"Path: " + file.Path,
@@ -201,16 +311,118 @@ func (m Model) centerLines() []string {
 	}...)
 	if len(file.Hunks) == 0 {
 		lines = append(lines, "No text hunks available for this file.")
-		return lines
+		return lines, -1
 	}
+	selectedLine := -1
 	for i, hunk := range file.Hunks {
 		prefix := "  "
 		if i == m.selectedHunk {
 			prefix = "> "
+			selectedLine = len(lines)
 		}
 		lines = append(lines, prefix+hunk.ID+" "+hunk.Header)
 	}
-	return lines
+	return lines, selectedLine
+}
+
+func (m Model) centerOverviewStyledLines(width int) []string {
+	prefix := m.errorStyledLines()
+	if m.mode == modeGrouped && m.slices != nil {
+		item := m.currentReviewItem()
+		if item == nil {
+			return append(prefix, m.callout("No selected slice."))
+		}
+		lines := append(prefix,
+			m.style.emphasis.Render(item.Title),
+			m.renderBadges(item.Category, item.Confidence),
+			"",
+			m.style.section.Render("Summary"),
+		)
+		lines = append(lines, limitLines(styledWrap(item.Summary, max(24, width), m.style.diffContext), 2)...)
+		lines = append(lines, "", m.style.section.Render("Rationale"))
+		lines = append(lines, limitLines(styledWrap(item.Rationale, max(24, width), m.style.diffContext), 2)...)
+		files := uniqueFiles(item.HunkRefs)
+		lines = append(lines, "", m.style.section.Render("Files"))
+		fileLine := strings.Join(files, ", ")
+		if len(files) == 1 && files[0] == "No files referenced." {
+			fileLine = files[0]
+		}
+		lines = append(lines, m.style.subtle.Render(ansi.Truncate(fileLine, width, "...")))
+		return lines
+	}
+
+	file := m.currentFile()
+	if file == nil {
+		return append(prefix, m.callout("No selected file."))
+	}
+	if file.IsBinary {
+		return append(prefix,
+			m.style.emphasis.Render(file.Path),
+			m.renderBadges(file.Status, "binary"),
+			"",
+			m.callout("Binary files do not include line hunks in the unified diff."),
+		)
+	}
+	return append(prefix,
+		m.style.emphasis.Render(file.Path),
+		m.renderBadges(file.Status, generatedLabel(file)),
+	)
+}
+
+func (m Model) centerScrollStyledLines() ([]string, int) {
+	if m.mode == modeGrouped && m.slices != nil {
+		item := m.currentReviewItem()
+		if item == nil {
+			return []string{m.callout("No selected slice.")}, -1
+		}
+		lines := []string{m.style.section.Render("Hunks")}
+		selectedLine := -1
+		for i, ref := range item.HunkRefs {
+			line := fmt.Sprintf("  %s  %s", ref.HunkID, ref.FilePath)
+			if i == m.selectedHunk {
+				line = m.style.diffSelected.Render("> " + ref.HunkID + "  " + ref.FilePath)
+				selectedLine = len(lines)
+			} else {
+				line = m.style.diffContext.Render(line)
+			}
+			lines = append(lines, line)
+		}
+		return lines, selectedLine
+	}
+
+	file := m.currentFile()
+	if file == nil {
+		return []string{m.callout("No selected file.")}, -1
+	}
+	if file.IsBinary {
+		return []string{m.callout("Binary files do not include line hunks in the unified diff.")}, -1
+	}
+	lines := []string{m.style.section.Render("Hunks")}
+	if len(file.Hunks) == 0 {
+		lines = append(lines, m.callout("No text hunks available for this file."))
+		return lines, -1
+	}
+	selectedLine := -1
+	for i, hunk := range file.Hunks {
+		line := fmt.Sprintf("  %s  %s", hunk.ID, hunk.Header)
+		if i == m.selectedHunk {
+			line = m.style.diffSelected.Render("> " + hunk.ID + "  " + hunk.Header)
+			selectedLine = len(lines)
+		} else {
+			line = m.style.diffContext.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	return lines, selectedLine
+}
+
+func (m Model) centerStyledLines() ([]string, int) {
+	overview := m.centerOverviewStyledLines(82)
+	scrolling, selectedLine := m.centerScrollStyledLines()
+	if selectedLine >= 0 {
+		selectedLine += len(overview)
+	}
+	return append(overview, scrolling...), selectedLine
 }
 
 func (m Model) errorLines() []string {
@@ -230,16 +442,26 @@ func (m Model) errorLines() []string {
 	return lines
 }
 
-func (m Model) rightLines() []string {
-	var hunk *diff.DiffHunk
-	if m.mode == modeGrouped && m.slices != nil {
-		if item := m.currentReviewItem(); item != nil && len(item.HunkRefs) > 0 {
-			idx := clamp(m.selectedHunk, 0, len(item.HunkRefs)-1)
-			hunk = m.findHunk(item.HunkRefs[idx])
-		}
-	} else {
-		hunk = m.currentRawHunk()
+func (m Model) errorStyledLines() []string {
+	if m.appErr == nil {
+		return nil
 	}
+	lines := []string{
+		m.style.errorText.Render("Last error"),
+		m.renderBadges(string(m.appErr.Kind), "recovery"),
+		m.style.diffContext.Render(m.appErr.Summary),
+		"",
+		m.style.section.Render("Recovery"),
+	}
+	lines = append(lines, styledWrap(m.appErr.Recovery, 82, m.style.diffContext)...)
+	lines = append(lines, "", m.style.section.Render("Details"))
+	lines = append(lines, styledWrap(m.appErr.Detail, 82, m.style.subtle)...)
+	lines = append(lines, "")
+	return lines
+}
+
+func (m Model) rightLines() []string {
+	hunk := m.selectedDiffHunk()
 	if hunk == nil {
 		if file := m.currentFile(); file != nil && file.IsBinary {
 			return []string{file.Path, "", "Binary file. No text hunk preview is available."}
@@ -260,14 +482,74 @@ func (m Model) rightLines() []string {
 	return lines
 }
 
+func (m Model) rightStyledLines() []string {
+	hunk := m.selectedDiffHunk()
+	if hunk == nil {
+		if file := m.currentFile(); file != nil && file.IsBinary {
+			return []string{
+				m.style.emphasis.Render(file.Path),
+				"",
+				m.callout("Binary file. No text hunk preview is available."),
+			}
+		}
+		return []string{
+			m.callout("No selected hunk."),
+			"",
+			m.style.subtle.Render("Use the left panel to select a file or slice with text hunks."),
+		}
+	}
+	lines := []string{
+		m.style.emphasis.Render(hunk.FilePath),
+		m.style.diffHeader.Render(hunk.Header),
+		"",
+	}
+	for _, line := range hunk.Lines {
+		lines = append(lines, m.renderDiffLine(line))
+	}
+	return lines
+}
+
+func (m Model) renderDiffLine(line diff.DiffLine) string {
+	oldNo := formatLineNumber(line.OldNumber)
+	newNo := formatLineNumber(line.NewNumber)
+	sign := " "
+	style := m.style.diffContext
+	switch line.Type {
+	case diff.LineAdded:
+		sign = "+"
+		style = m.style.diffAdded
+	case diff.LineDeleted:
+		sign = "-"
+		style = m.style.diffDeleted
+	}
+	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
+	body := style.Render(fmt.Sprintf("%s %s", sign, line.Content))
+	return gutter + body
+}
+
+func (m Model) selectedDiffHunk() *diff.DiffHunk {
+	if m.mode == modeGrouped && m.slices != nil {
+		if item := m.currentReviewItem(); item != nil && len(item.HunkRefs) > 0 {
+			idx := clamp(m.selectedHunk, 0, len(item.HunkRefs)-1)
+			return m.findHunk(item.HunkRefs[idx])
+		}
+		return nil
+	}
+	return m.currentRawHunk()
+}
+
 func (m Model) findHunk(ref agent.HunkRef) *diff.DiffHunk {
 	if m.pr == nil {
 		return nil
 	}
-	for _, file := range m.pr.Files {
-		for _, hunk := range file.Hunks {
+	for i := range m.pr.Files {
+		for j := range m.pr.Files[i].Hunks {
+			hunk := &m.pr.Files[i].Hunks[j]
+			if hunk.ID == ref.HunkID && hunk.FilePath == ref.FilePath {
+				return hunk
+			}
 			if hunk.ID == ref.HunkID {
-				return &hunk
+				return hunk
 			}
 		}
 	}
@@ -277,8 +559,18 @@ func (m Model) findHunk(ref agent.HunkRef) *diff.DiffHunk {
 func (m Model) renderFrame(title string, lines []string) string {
 	width := max(40, m.width)
 	height := max(8, m.height)
-	content := append([]string{title, ""}, lines...)
-	panel := m.renderPanel("SliceDiff", content, min(width, 100), min(height-2, 20), true, 0)
+	body := []string{
+		m.style.headerTitle.Render(title),
+		"",
+	}
+	if m.stage == stageLoading || m.aiBusy {
+		body[0] = lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", body[0])
+	}
+	for _, line := range lines {
+		body = append(body, m.style.diffContext.Render(line))
+	}
+	body = append(body, "", m.style.subtle.Render("q quits"))
+	panel := m.renderPanel("SliceDiff", fitLines(strings.Join(body, "\n"), min(height-4, 18), min(width-4, 92)), min(width, 96), min(height-2, 20), true)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel)
 }
 
@@ -286,11 +578,11 @@ func (m Model) renderRunnerPicker() string {
 	options := []string{"codex", "opencode"}
 	lines := []string{"Choose the AI runner SliceDiff should use:", ""}
 	for i, option := range options {
-		prefix := "  "
 		if i == m.selectedSetup {
-			prefix = "> "
+			lines = append(lines, m.style.diffSelected.Render("> "+option))
+		} else {
+			lines = append(lines, m.style.diffContext.Render("  "+option))
 		}
-		lines = append(lines, prefix+option)
 	}
 	lines = append(lines, "", "enter selects | q quits")
 	return m.renderFrame("AI runner", lines)
@@ -334,20 +626,7 @@ func (m Model) leftTitle() string {
 
 func (m Model) centerTitle() string {
 	focus := focusMark(m.focus == panelCenter)
-	if m.mode == modeGrouped && m.slices != nil {
-		total := 0
-		if item := m.currentReviewItem(); item != nil {
-			total = len(item.HunkRefs)
-		}
-		if total == 0 {
-			return focus + " Details hunk 0/0"
-		}
-		return fmt.Sprintf("%s Details hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, total), total)
-	}
-	total := 0
-	if file := m.currentFile(); file != nil {
-		total = len(file.Hunks)
-	}
+	total := m.currentHunkCount()
 	if total == 0 {
 		return focus + " Details hunk 0/0"
 	}
@@ -356,23 +635,41 @@ func (m Model) centerTitle() string {
 
 func (m Model) rightTitle() string {
 	focus := focusMark(m.focus == panelRight)
+	total := m.currentHunkCount()
+	if total == 0 {
+		return focus + " Diff 0/0"
+	}
+	return fmt.Sprintf("%s Diff %d/%d", focus, clamp(m.selectedHunk+1, 1, total), total)
+}
+
+func (m Model) currentHunkCount() int {
 	if m.mode == modeGrouped && m.slices != nil {
-		if item := m.currentReviewItem(); item != nil && len(item.HunkRefs) > 0 {
-			return fmt.Sprintf("%s Hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, len(item.HunkRefs)), len(item.HunkRefs))
+		if item := m.currentReviewItem(); item != nil {
+			return len(item.HunkRefs)
 		}
-		return focus + " Hunk 0/0"
+		return 0
 	}
-	if file := m.currentFile(); file != nil && len(file.Hunks) > 0 {
-		return fmt.Sprintf("%s Hunk %d/%d", focus, clamp(m.selectedHunk+1, 1, len(file.Hunks)), len(file.Hunks))
+	if file := m.currentFile(); file != nil {
+		return len(file.Hunks)
 	}
-	return focus + " Hunk 0/0"
+	return 0
+}
+
+func (m Model) currentLeftIndex() int {
+	if m.mode == modeGrouped && m.slices != nil {
+		return clamp(m.selectedSlice, 0, max(0, len(m.reviewItems())-1))
+	}
+	if m.pr != nil {
+		return clamp(m.selectedFile, 0, max(0, len(m.pr.Files)-1))
+	}
+	return 0
 }
 
 func focusMark(active bool) string {
 	if active {
-		return "*"
+		return ">>"
 	}
-	return " "
+	return "  "
 }
 
 func uniqueFiles(refs []agent.HunkRef) []string {
@@ -428,6 +725,23 @@ func wrapWords(text string, width int) []string {
 	return lines
 }
 
+func styledWrap(text string, width int, style lipgloss.Style) []string {
+	lines := wrapWords(text, width)
+	for i, line := range lines {
+		lines[i] = style.Render(line)
+	}
+	return lines
+}
+
+func limitLines(lines []string, limit int) []string {
+	if limit <= 0 || len(lines) <= limit {
+		return lines
+	}
+	out := append([]string{}, lines[:limit]...)
+	out[limit-1] = ansi.Truncate(out[limit-1], max(1, lipgloss.Width(out[limit-1])-3), "...")
+	return out
+}
+
 func truncate(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
@@ -436,10 +750,77 @@ func truncate(s string, maxLen int) string {
 	if len(runes) <= maxLen {
 		return s
 	}
-	if maxLen == 1 {
-		return string(runes[:1])
+	if maxLen <= 3 {
+		return string(runes[:maxLen])
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+func fitLines(content string, height, width int) string {
+	if height <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, line := range lines {
+		if width > 0 {
+			lines[i] = ansi.Truncate(line, width, "...")
+		}
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func cropLines(content string, height, width int) string {
+	if height <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, line := range lines {
+		if width > 0 {
+			lines[i] = ansi.Truncate(line, width, "...")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderBadges(values ...string) string {
+	var badges []string
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		badges = append(badges, m.style.chip.Render(strings.ToUpper(value)))
+	}
+	return strings.Join(badges, " ")
+}
+
+func (m Model) callout(text string) string {
+	return m.style.callout.Render(text)
+}
+
+func generatedLabel(file *diff.DiffFile) string {
+	if file == nil {
+		return ""
+	}
+	if file.IsGenerated {
+		return "generated"
+	}
+	return "source"
+}
+
+func formatLineNumber(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 func min(a, b int) int {

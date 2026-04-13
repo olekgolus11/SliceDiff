@@ -6,7 +6,11 @@ import (
 	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 	"github.com/olekgolus11/SliceDiff/internal/config"
 	"github.com/olekgolus11/SliceDiff/internal/diff"
@@ -30,10 +34,14 @@ type Model struct {
 	selectedFile  int
 	selectedHunk  int
 	selectedSetup int
-	leftScroll    int
-	centerScroll  int
-	rightScroll   int
 	showHelp      bool
+
+	leftList       list.Model
+	centerViewport viewport.Model
+	rightViewport  viewport.Model
+	help           help.Model
+	spinner        spinner.Model
+	keys           keyMap
 
 	status string
 	errMsg string
@@ -44,18 +52,25 @@ type Model struct {
 }
 
 func New(opts Options) Model {
+	style := defaultStyles()
 	return Model{
-		opts:   opts,
-		stage:  stageLoading,
-		mode:   modeRaw,
-		focus:  panelLeft,
-		status: "Loading pull request...",
-		style:  defaultStyles(),
+		opts:           opts,
+		stage:          stageLoading,
+		mode:           modeRaw,
+		focus:          panelLeft,
+		status:         "Loading pull request...",
+		leftList:       newNavigationList(style),
+		centerViewport: newViewport(style),
+		rightViewport:  newViewport(style),
+		help:           newHelp(style),
+		spinner:        newSpinner(style),
+		keys:           defaultKeyMap(),
+		style:          style,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return loadPRCmd(m.opts.Target)
+	return tea.Batch(loadPRCmd(m.opts.Target), m.spinner.Tick)
 }
 
 func loadPRCmd(target github.Target) tea.Cmd {
