@@ -335,6 +335,30 @@ func TestStyledDiffLinesUseLanguageColor(t *testing.T) {
 	if plain := ansi.Strip(rendered); !strings.Contains(plain, "+ func main() { return }") {
 		t.Fatalf("expected highlighted diff to preserve plain text, got:\n%s", rendered)
 	}
+	if !strings.Contains(rendered, "48;2;12;42;27") {
+		t.Fatalf("expected highlighted added line to keep green background, got:\n%s", rendered)
+	}
+}
+
+func TestStyledDiffLinesKeepDeletedBackgroundWithLanguageColor(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineDeleted,
+		OldNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "\x1b[38;2;") {
+		t.Fatalf("expected truecolor syntax highlighting in diff view, got:\n%s", rendered)
+	}
+	if plain := ansi.Strip(rendered); !strings.Contains(plain, "- func main() { return }") {
+		t.Fatalf("expected highlighted diff to preserve plain text, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "48;2;42;16;23") {
+		t.Fatalf("expected highlighted deleted line to keep red background, got:\n%s", rendered)
+	}
 }
 
 func TestHelpExpandsInFooter(t *testing.T) {

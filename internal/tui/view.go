@@ -786,7 +786,7 @@ func (m Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 		style = m.style.diffDeleted
 	}
 	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
-	code, ok := highlightDiffCode(filePath, line.Content)
+	code, ok := highlightDiffCode(filePath, line.Content, style)
 	if !ok {
 		code = style.Render(line.Content)
 	}

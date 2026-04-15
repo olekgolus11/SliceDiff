@@ -1,22 +1,18 @@
 package tui
 
 import (
-	"bytes"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 )
 
-var (
-	diffSyntaxFormatter = formatters.Get("terminal16m")
-	diffSyntaxStyle     = chromastyles.Get("github-dark")
-)
+var diffSyntaxStyle = chromastyles.Get("github-dark")
 
-func highlightDiffCode(filePath, content string) (string, bool) {
-	if content == "" || diffSyntaxFormatter == nil || diffSyntaxStyle == nil {
+func highlightDiffCode(filePath, content string, base lipgloss.Style) (string, bool) {
+	if content == "" || diffSyntaxStyle == nil {
 		return content, false
 	}
 
@@ -31,14 +27,28 @@ func highlightDiffCode(filePath, content string) (string, bool) {
 		return content, false
 	}
 
-	var buf bytes.Buffer
-	if err := diffSyntaxFormatter.Format(&buf, diffSyntaxStyle, iterator); err != nil {
-		return content, false
+	var highlighted strings.Builder
+	for token := iterator(); token != chroma.EOF; token = iterator() {
+		style := base
+		entry := diffSyntaxStyle.Get(token.Type)
+		if entry.Colour.IsSet() {
+			style = style.Foreground(lipgloss.Color(entry.Colour.String()))
+		}
+		if entry.Bold == chroma.Yes {
+			style = style.Bold(true)
+		}
+		if entry.Italic == chroma.Yes {
+			style = style.Italic(true)
+		}
+		if entry.Underline == chroma.Yes {
+			style = style.Underline(true)
+		}
+		highlighted.WriteString(style.Render(token.Value))
 	}
 
-	highlighted := strings.TrimRight(buf.String(), "\r\n")
-	if highlighted == "" {
+	result := strings.TrimRight(highlighted.String(), "\r\n")
+	if result == "" {
 		return content, false
 	}
-	return highlighted, true
+	return result, true
 }
