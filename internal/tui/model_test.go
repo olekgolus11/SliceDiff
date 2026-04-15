@@ -194,19 +194,6 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	}
 }
 
-func TestWelcomeArtFallsBackToLargeCakeSliceWhenRebusDoesNotFit(t *testing.T) {
-	m := New(Options{Config: &config.Store{}})
-
-	art := m.renderWelcomeArt(80, 21)
-
-	if strings.Contains(art, "░░███░░░░███") {
-		t.Fatalf("expected Slice wordmark to be omitted when the rebus does not fit, got:\n%s", art)
-	}
-	if !strings.Contains(art, "░▒▓▓█████▓▒░░") || !strings.Contains(art, "░▒▓███▓▓████░") {
-		t.Fatalf("expected large cake-slice fallback art, got:\n%s", art)
-	}
-}
-
 func TestWelcomePickerListStartsOnStableRowAcrossSections(t *testing.T) {
 	m := New(Options{Config: &config.Store{}})
 	m.width = 96

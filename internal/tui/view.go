@@ -82,7 +82,6 @@ const welcomeCakeMarkArt = `
       ░▒▓███▓▓████░
 `
 
-
 const welcomeDiffArt = `
 ██████████    ███     ██████     ██████
 ░░███░░░░███  ░░░     ███░░███   ███░░███
@@ -92,38 +91,6 @@ const welcomeDiffArt = `
  ░███    ███  ░███   ░███       ░███
  ██████████   █████  █████      █████
 ░░░░░░░░░░   ░░░░░  ░░░░░      ░░░░░
-`
-
-const welcomeCakeArt = `
-
-
-
-
-
-
-
-
-
-                                          ░▒▒▓███████
-                              ░▒▓▓█████▓▒░░    ▒██▒█░
-                         ███▓░              ░██▒ █ █░
-                         ██▓████░         ██▓ ▒███ █░
-                         █▓   ▓██████████▓░▒██████ █░
-                         █▓           ▓█ ██████▓░▒ █░
-                         ██           ▒█ ███▓░▒███ █░
-                         ██           ▒█ █░▒██████▓
-                          ██          ▒█ ██████▓
-                           ▒██▓░      ▒██████
-                              ░▒▓███▓▓████░
-
-
-
-
-
-
-
-
-
 `
 
 func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
@@ -191,12 +158,8 @@ func (m Model) renderWelcomeArt(width, maxHeight int) string {
 		trimBlankArtRows(strings.Split(strings.Trim(welcomeCakeMarkArt, "\n"), "\n")),
 		trimBlankArtRows(strings.Split(strings.Trim(welcomeDiffArt, "\n"), "\n")),
 	)
-	cakeLines := trimBlankArtRows(strings.Split(strings.Trim(welcomeCakeArt, "\n"), "\n"))
-
-	for _, lines := range [][]string{wordmarkLines, cakeLines} {
-		if artFits(lines, width, maxHeight) {
-			return strings.Join(lines, "\n")
-		}
+	if artFits(wordmarkLines, width, maxHeight) {
+		return strings.Join(wordmarkLines, "\n")
 	}
 	return ""
 }
