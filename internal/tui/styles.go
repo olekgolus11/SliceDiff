@@ -244,8 +244,8 @@ func (d navigationDelegate) Render(w io.Writer, model list.Model, index int, ite
 	}
 
 	titleWidth := max(1, width-lipgloss.Width(prefix))
-	title := prefix + ansi.Truncate(nav.Title(), titleWidth, "...")
-	desc := "  " + ansi.Truncate(nav.Description(), max(1, width-2), "...")
+	title := fitPlainLine(prefix+ansi.Truncate(nav.Title(), titleWidth, "..."), width)
+	desc := fitPlainLine("  "+ansi.Truncate(nav.Description(), max(1, width-2), "..."), width)
 	fmt.Fprintf(w, "%s\n%s", titleStyle.Render(title), descStyle.Render(desc))
 }
 

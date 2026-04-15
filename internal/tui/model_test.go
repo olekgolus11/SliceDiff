@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -140,11 +141,15 @@ func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
 	if len(lines) > 1 && strings.Contains(lines[0]+lines[1], "Choose a pull request") {
 		t.Fatalf("expected choose copy in centered body, got top lines:\n%s\n%s", lines[0], lines[1])
 	}
-	if !strings.Contains(content, "SLICE") || !strings.Contains(content, "DIFF") {
-		t.Fatalf("expected ASCII cake logo, got:\n%s", content)
-	}
 	if !strings.Contains(content, "Choose a pull request") {
 		t.Fatalf("expected centered choose copy, got:\n%s", content)
+	}
+	plain := ansi.Strip(content)
+	if !strings.Contains(plain, "Requested review 0/0") {
+		t.Fatalf("expected inline count, got:\n%s", plain)
+	}
+	if first := strings.Split(plain, "\n")[0]; strings.Contains(first, "Requested review") {
+		t.Fatalf("expected count out of panel title, got first line %q", first)
 	}
 	if !strings.Contains(content, "No requested reviews") {
 		t.Fatalf("expected empty state, got:\n%s", content)
@@ -155,6 +160,127 @@ func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
 	if !strings.Contains(content, "Could not load choices") || !strings.Contains(content, "gh search failed") {
 		t.Fatalf("expected error state, got:\n%s", content)
 	}
+}
+
+func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 124
+	m.height = 52
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = nil
+	m.syncComponents()
+
+	content := m.renderWelcome()
+	if !strings.Contains(content, "░░███░░░░███") || !strings.Contains(content, "▒▓▓████▓▒") || !strings.Contains(content, "██████████") {
+		t.Fatalf("expected Slice cake Diff art, got:\n%s", content)
+	}
+	line := firstLineContaining(content, "▒▓▓████▓▒")
+	if line == "" {
+		t.Fatalf("expected cake mark in wordmark, got:\n%s", content)
+	}
+	sliceIndex := strings.Index(line, "█████████")
+	cakeIndex := strings.Index(line, "▒▓▓████▓▒")
+	diffIndex := strings.LastIndex(line, "██████████")
+	if sliceIndex < 0 || cakeIndex < 0 || diffIndex < 0 || !(sliceIndex < cakeIndex && cakeIndex < diffIndex) {
+		t.Fatalf("expected Slice, then cake, then Diff on one row, got %q", line)
+	}
+	if !strings.Contains(content, "Choose a pull request") {
+		t.Fatalf("expected centered choose copy, got:\n%s", content)
+	}
+}
+
+func TestWelcomeArtIsOmittedWhenSliceCakeDiffDoesNotFit(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+
+	art := m.renderWelcomeArt(80, 21)
+
+	if art != "" {
+		t.Fatalf("expected art to be omitted when the rebus does not fit, got:\n%s", art)
+	}
+}
+
+func TestWelcomePickerListStartsOnStableRowAcrossSections(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 28
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = nil
+	m.syncComponents()
+
+	requested := ansi.Strip(m.renderWelcome())
+	requestedRow := lineIndexContaining(requested, "No requested reviews")
+	if requestedRow < 0 {
+		t.Fatalf("expected requested empty item, got:\n%s", requested)
+	}
+
+	m.welcomeSection = welcomeManual
+	m.manualStep = manualRepos
+	m.manualQuery = ""
+	m.repoResults = nil
+	m.syncComponents()
+
+	manual := ansi.Strip(m.renderWelcome())
+	manualRow := lineIndexContaining(manual, "Search repositories")
+	if manualRow < 0 {
+		t.Fatalf("expected manual search item, got:\n%s", manual)
+	}
+	if requestedRow != manualRow {
+		t.Fatalf("expected first picker item on same row, requested=%d manual=%d\nrequested:\n%s\nmanual:\n%s", requestedRow, manualRow, requested, manual)
+	}
+	if !strings.Contains(manual, "Manual repositories 0/0") {
+		t.Fatalf("expected inline manual count, got:\n%s", manual)
+	}
+	searchRow := lineIndexContaining(manual, "/ type a repository name")
+	if searchRow < 0 {
+		t.Fatalf("expected dedicated search row, got:\n%s", manual)
+	}
+	if searchRow >= manualRow {
+		t.Fatalf("expected search row above picker list, search=%d picker=%d\n%s", searchRow, manualRow, manual)
+	}
+	lines := strings.Split(manual, "\n")
+	if searchRow == 0 || searchRow+1 >= len(lines) || !isBlankPanelRow(lines[searchRow-1]) || !isBlankPanelRow(lines[searchRow+1]) {
+		t.Fatalf("expected blank spacing around search row, got:\n%s", manual)
+	}
+}
+
+func TestNavigationDelegatePadsSelectedRows(t *testing.T) {
+	style := defaultStyles()
+	delegate := navigationDelegate{style: style}
+	model := newNavigationList(style)
+	model.SetSize(32, 4)
+
+	var buf bytes.Buffer
+	delegate.Render(&buf, model, 0, pickerItem{title: "Short", description: "Tiny"})
+	lines := strings.Split(ansi.Strip(buf.String()), "\n")
+	for i, line := range lines {
+		if got := ansi.StringWidth(line); got != 32 {
+			t.Fatalf("line %d expected width 32, got %d: %q", i, got, line)
+		}
+	}
+}
+
+func lineIndexContaining(content, needle string) int {
+	for i, line := range strings.Split(content, "\n") {
+		if strings.Contains(line, needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func firstLineContaining(content, needle string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.Contains(line, needle) {
+			return line
+		}
+	}
+	return ""
+}
+
+func isBlankPanelRow(line string) bool {
+	return strings.Trim(line, " ┃") == ""
 }
 
 func TestManualTypingFiltersScopedRepositoryPool(t *testing.T) {

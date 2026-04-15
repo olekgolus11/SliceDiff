@@ -57,7 +57,83 @@ func (m Model) renderWelcome() string {
 	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
 }
 
-func (m Model) renderWelcomeCluster(width int) string {
+const welcomeSliceArt = `
+  █████████  ████   ███
+ ███░░░░░███░░███  ░░░
+░███    ░░░  ░███  ████   ██████   ██████
+░░█████████  ░███ ░░███  ███░░███ ███░░███
+ ░░░░░░░░███ ░███  ░███ ░███ ░░░ ░███████
+ ███    ░███ ░███  ░███ ░███  ███░███░░░
+░░█████████  █████ █████░░██████ ░░██████
+ ░░░░░░░░░  ░░░░░ ░░░░░  ░░░░░░   ░░░░░░
+`
+
+const welcomeCakeMarkArt = `
+       ▒▓▓████▓▒
+   ███▓░      ░▓██
+  ██   ▒█████▒   ██
+ ██ ▒██▓░   ░▓██▒ ██
+ ██   ░███████░   ██
+ ██      ███      ██
+  ██▒    ███    ▒██
+    ███▒     ▒███
+       ░▓███▓░
+`
+
+const welcomeDiffArt = `
+██████████    ███     ██████     ██████
+░░███░░░░███  ░░░     ███░░███   ███░░███
+ ░███   ░░███ ████   ░███ ░░░   ░███ ░░░
+ ░███    ░███░░███  ███████    ███████
+ ░███    ░███ ░███ ░░░███░    ░░░███░
+ ░███    ███  ░███   ░███       ░███
+ ██████████   █████  █████      █████
+░░░░░░░░░░   ░░░░░  ░░░░░      ░░░░░
+`
+
+const welcomeCakeArt = `
+
+
+
+
+
+
+
+
+
+                                               ▒▓▓████████████████▓▒░
+                                        ███████▓░                   ░▓█████▓
+                                    ▓███▓                                  ░███▓
+                                  ███                                          ▒██
+                                 ███                                             ██░
+                                 ██▒██▒   ▒███████████████████                   ░██
+                                 ██  ░████▒            ░░ ▒█▓                   ░███
+                                 ░   ░░▒▓██████████████▓ ██                  ░██████
+                          █████████████▓▒        ▒███  ██▒             █████████  ██
+                         ████░                ░███░  ▓██   ▒████▒   ░███████▓     ██
+                         ██ ▒██▓            ███▒ ▒█ ██████████████████▓░          ██
+                         ██   ░█████░    ███▓ ░████ ██                            ██
+                         ██       ░███████  ███████ ██                            ██
+                         ██            ██ ████████▓ ██                            █▓
+                         ██            ██ ██████  ▓ ██                          ▓██
+                         ██            ██ ███  ████ ██                       ░███
+                         ░██           ██ ░ ███████ ██                   ▒████░
+                           ██▒         ██▓███████▒  ██▓░░   ░░░▒▒▓███████▒
+                             ███▒      ███████▓       ▒▓█████▓▓▒░
+                                █████░ █████
+                                    ░▓███
+
+
+
+
+
+
+
+
+
+`
+
+func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 	requested := m.style.chipHot.Render("Requested review")
 	manual := m.style.chip.Render("Manual")
 	if m.welcomeSection == welcomeManual {
@@ -65,8 +141,9 @@ func (m Model) renderWelcomeCluster(width int) string {
 		manual = m.style.chipHot.Render("Manual")
 	}
 	lines := []string{}
-	if width >= 24 {
-		lines = append(lines, strings.Split(m.renderCakeLogo(width), "\n")...)
+	if logo := m.renderWelcomeArt(width, maxLogoHeight); logo != "" {
+		lines = append(lines, strings.Split(logo, "\n")...)
+		lines = append(lines, "")
 	}
 	lines = append(lines,
 		m.style.headerTitle.Render("SliceDiff"),
@@ -76,34 +153,113 @@ func (m Model) renderWelcomeCluster(width int) string {
 			" ",
 			manual,
 		),
-		m.style.subtle.Render(m.welcomeSubtitle()),
+		m.renderWelcomeStatus(width),
 	)
 	for i, line := range lines {
-		lines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(line, width, "..."))
+		if lipgloss.Width(line) > width && !strings.Contains(line, "\x1b[") {
+			line = ansi.Truncate(line, width, "...")
+		}
+		lines[i] = fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderCakeLogo(width int) string {
-	lines := []string{
-		"     i i i",
-		"     | | |",
-		"  .--'-----'--.",
-		"  |  SLICE    |",
-		"  |   DIFF    |",
-		"  '-----------'",
+func (m Model) renderWelcomeSearchRows(width int) []string {
+	rows := []string{fillLine("", width)}
+	if m.welcomeSection != welcomeManual || m.manualStep != manualRepos {
+		return append(rows, fillLine("", width), fillLine("", width))
 	}
-	for i, line := range lines {
-		style := m.style.diffContext
-		if i < 2 {
-			style = m.style.warning
-		}
-		if i == 3 || i == 4 {
-			style = m.style.emphasis
-		}
-		lines[i] = style.Render(lipgloss.PlaceHorizontal(width, lipgloss.Center, ansi.Truncate(line, width, "...")))
+	prompt := "/ " + m.manualQuery
+	if m.manualQuery == "" {
+		prompt = "/ type a repository name"
 	}
-	return strings.Join(lines, "\n")
+	searchWidth := max(1, width-4)
+	search := m.style.callout.Width(width).Render(fitPlainLine(ansi.Truncate(prompt, searchWidth, "..."), searchWidth))
+	return append(rows, fillLine(search, width), fillLine("", width))
+}
+
+func (m Model) renderWelcomeStatus(width int) string {
+	count := m.welcomeCountLabel()
+	countWidth := lipgloss.Width(count)
+	separator := "  /  "
+	subtitleWidth := max(1, width-countWidth-ansi.StringWidth(separator))
+	subtitle := ansi.Truncate(m.welcomeSubtitle(), subtitleWidth, "...")
+	line := lipgloss.JoinHorizontal(lipgloss.Center,
+		m.style.panelTitle.Render(count),
+		m.style.subtle.Render(separator),
+		m.style.subtle.Render(subtitle),
+	)
+	return line
+}
+
+func (m Model) renderWelcomeArt(width, maxHeight int) string {
+	wordmarkLines := horizontalArt(
+		trimBlankArtRows(strings.Split(strings.Trim(welcomeSliceArt, "\n"), "\n")),
+		trimBlankArtRows(strings.Split(strings.Trim(welcomeCakeMarkArt, "\n"), "\n")),
+		trimBlankArtRows(strings.Split(strings.Trim(welcomeDiffArt, "\n"), "\n")),
+	)
+	cakeLines := trimBlankArtRows(strings.Split(strings.Trim(welcomeCakeArt, "\n"), "\n"))
+
+	for _, lines := range [][]string{wordmarkLines, cakeLines} {
+		if artFits(lines, width, maxHeight) {
+			return strings.Join(lines, "\n")
+		}
+	}
+	return ""
+}
+
+func artFits(lines []string, width, maxHeight int) bool {
+	artWidth := 0
+	for _, line := range lines {
+		artWidth = max(artWidth, lipgloss.Width(line))
+	}
+	if width < artWidth || maxHeight < len(lines) {
+		return false
+	}
+	return true
+}
+
+func horizontalArt(parts ...[]string) []string {
+	height := 0
+	widths := make([]int, len(parts))
+	for i, part := range parts {
+		height = max(height, len(part))
+		for _, line := range part {
+			widths[i] = max(widths[i], lipgloss.Width(line))
+		}
+	}
+	lines := make([]string, height)
+	for row := 0; row < height; row++ {
+		pieces := make([]string, len(parts))
+		for i, part := range parts {
+			line := ""
+			if row < len(part) {
+				line = part[row]
+			}
+			pieces[i] = padRight(line, widths[i])
+		}
+		lines[row] = strings.Join(pieces, "   ")
+	}
+	return lines
+}
+
+func padRight(line string, width int) string {
+	if gap := width - lipgloss.Width(line); gap > 0 {
+		line += strings.Repeat(" ", gap)
+	}
+	return line
+}
+
+func trimBlankArtRows(lines []string) []string {
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	return lines[start:end]
 }
 
 func (m Model) welcomeSubtitle() string {
@@ -118,32 +274,33 @@ func (m Model) welcomeSubtitle() string {
 
 func (m Model) renderWelcomeBody(width, height int) string {
 	bodyWidth := max(1, width-2)
-	bodyHeight := max(0, height-2)
-	cluster := m.renderWelcomeCluster(bodyWidth)
-	clusterHeight := lipgloss.Height(cluster)
+	innerHeight := max(1, height-2)
+	bodyHeight := max(0, innerHeight-1)
 	lines := make([]string, 0, bodyHeight)
-	promptLines := []string{}
-	if m.welcomeSection == welcomeManual && m.manualStep == manualRepos {
-		prompt := "/ " + m.manualQuery
-		if m.manualQuery == "" {
-			prompt = "/ type a repository name"
-		}
-		promptLines = append(promptLines, m.style.callout.Render(ansi.Truncate(prompt, bodyWidth, "...")), "")
-	}
 	minListHeight := 6
 	if bodyHeight < 18 {
 		minListHeight = 3
 	}
-	topPad := max(0, (bodyHeight-clusterHeight-len(promptLines)-minListHeight)/2)
+	topPad := 0
+	if bodyHeight >= 14 {
+		topPad = 1
+	}
+	maxLogoHeight := max(0, bodyHeight-topPad-minListHeight-9)
+	cluster := m.renderWelcomeCluster(bodyWidth, maxLogoHeight)
 	for i := 0; i < topPad; i++ {
-		lines = append(lines, "")
+		lines = append(lines, fillLine("", bodyWidth))
 	}
 	lines = append(lines, cluster, "")
-	lines = append(lines, promptLines...)
+	lines = append(lines, m.renderWelcomeSearchRows(bodyWidth)...)
+	lines = fillWelcomeLines(lines, bodyWidth)
 	if m.pickerBusy {
-		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading..."))
+		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading...")
+		lines = append(lines, fillLine(lipgloss.PlaceHorizontal(bodyWidth, lipgloss.Center, loading), bodyWidth))
 	} else if m.pickerErr != "" {
-		lines = append(lines, m.style.errorText.Render("Could not load choices."), m.style.diffContext.Render(ansi.Truncate(m.pickerErr, bodyWidth, "...")))
+		lines = append(lines,
+			fillLine(m.style.errorText.Render("Could not load choices."), bodyWidth),
+			fillLine(m.style.diffContext.Render(ansi.Truncate(m.pickerErr, bodyWidth, "...")), bodyWidth),
+		)
 	} else {
 		m.syncPickerList()
 		listHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
@@ -153,7 +310,7 @@ func (m Model) renderWelcomeBody(width, height int) string {
 		lines = append(lines, fitLines(pickerList.View(), listHeight, bodyWidth))
 	}
 	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
-	return m.renderPanel(m.welcomePanelTitle(), body, width, max(1, height-2), true)
+	return m.renderPanel(m.welcomePanelTitle(), body, width, innerHeight, true)
 }
 
 func (m Model) renderPickerFooter() string {
@@ -171,6 +328,10 @@ func (m Model) renderPickerFooter() string {
 }
 
 func (m Model) welcomePanelTitle() string {
+	return "SliceDiff"
+}
+
+func (m Model) welcomeCountLabel() string {
 	switch m.welcomeSection {
 	case welcomeRequested:
 		total := len(m.reviewPRs)
@@ -1093,13 +1254,46 @@ func fitLines(content string, height, width int) string {
 	}
 	for i, line := range lines {
 		if width > 0 {
-			lines[i] = ansi.Truncate(line, width, "...")
+			if lipgloss.Width(line) > width {
+				lines[i] = ansi.Truncate(line, width, "...")
+			}
 		}
 	}
 	for len(lines) < height {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func fillWelcomeLines(lines []string, width int) []string {
+	for i, line := range lines {
+		lines[i] = fillLine(line, width)
+	}
+	return lines
+}
+
+func fillLine(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(line) > width {
+		line = ansi.Truncate(line, width, "...")
+	}
+	if gap := width - lipgloss.Width(line); gap > 0 {
+		line += strings.Repeat(" ", gap)
+	}
+	return line
+}
+
+func fitPlainLine(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line = ansi.Truncate(line, width, "...")
+	if gap := width - ansi.StringWidth(line); gap > 0 {
+		line += strings.Repeat(" ", gap)
+	}
+	return line
 }
 
 func cropLines(content string, height, width int) string {
@@ -1112,7 +1306,9 @@ func cropLines(content string, height, width int) string {
 	}
 	for i, line := range lines {
 		if width > 0 {
-			lines[i] = ansi.Truncate(line, width, "...")
+			if lipgloss.Width(line) > width {
+				lines[i] = ansi.Truncate(line, width, "...")
+			}
 		}
 	}
 	return strings.Join(lines, "\n")
