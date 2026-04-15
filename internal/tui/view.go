@@ -322,8 +322,13 @@ func (m Model) renderCenterPanel(title string, width, innerHeight int, focused b
 	remainingHeight := max(0, bodyHeight-overviewHeight)
 
 	viewportModel := m.centerViewport
+	scrollingLines, selectedStart, selectedEnd := m.centerScrollStyledLineRange(bodyWidth)
 	viewportModel.SetWidth(bodyWidth)
 	viewportModel.SetHeight(remainingHeight)
+	viewportModel.SetContentLines(scrollingLines)
+	if selectedStart >= 0 {
+		ensureViewportRangeVisible(&viewportModel, selectedStart, selectedEnd)
+	}
 	scrolling := fitLines(viewportModel.View(), remainingHeight, bodyWidth)
 	body := overview
 	if remainingHeight > 0 {
@@ -591,35 +596,43 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 }
 
 func (m Model) centerScrollStyledLines(width int) ([]string, int) {
+	lines, selectedStart, _ := m.centerScrollStyledLineRange(width)
+	return lines, selectedStart
+}
+
+func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 	if m.mode == modeGrouped && m.slices != nil {
 		item := m.currentReviewItem()
 		if item == nil {
-			return []string{m.callout("No selected slice.")}, -1
+			return []string{m.callout("No selected slice.")}, -1, -1
 		}
 		lines := []string{"", m.style.section.Render("Reading order")}
-		selectedLine := -1
+		selectedStart := -1
+		selectedEnd := -1
 		for i, step := range item.ReadingSteps {
 			selected := i == m.selectedHunk
+			bodyStart := len(lines)
 			lines = append(lines, m.renderReadingStepBody(step.Body, width, selected)...)
 			if selected {
-				selectedLine = len(lines)
+				selectedStart = bodyStart
+				selectedEnd = len(lines)
 			}
 			lines = append(lines, m.renderReadingStepRef(step.HunkRef, width, selected), "")
 		}
-		return lines, selectedLine
+		return lines, selectedStart, selectedEnd
 	}
 
 	file := m.currentFile()
 	if file == nil {
-		return []string{m.callout("No selected file.")}, -1
+		return []string{m.callout("No selected file.")}, -1, -1
 	}
 	if file.IsBinary {
-		return []string{m.callout("Binary files do not include line hunks in the unified diff.")}, -1
+		return []string{m.callout("Binary files do not include line hunks in the unified diff.")}, -1, -1
 	}
 	lines := []string{m.style.section.Render("Hunks")}
 	if len(file.Hunks) == 0 {
 		lines = append(lines, m.callout("No text hunks available for this file."))
-		return lines, -1
+		return lines, -1, -1
 	}
 	selectedLine := -1
 	for i, hunk := range file.Hunks {
@@ -638,7 +651,7 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 		}
 		lines = append(lines, line)
 	}
-	return lines, selectedLine
+	return lines, selectedLine, selectedLine
 }
 
 func (m Model) renderReadingStepBody(body string, width int, selected bool) []string {

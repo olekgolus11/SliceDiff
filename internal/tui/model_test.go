@@ -516,6 +516,24 @@ func TestGroupedDetailsReadingStepsRenderNarrativeAndElideLongFilePaths(t *testi
 	}
 }
 
+func TestGroupedDetailsSelectedLineAnchorsProse(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.selectedHunk = 0
+	m.centerViewport.SetHeight(1)
+
+	lines, selectedLine := m.centerScrollStyledLines(58)
+	if selectedLine < 0 || selectedLine >= len(lines) {
+		t.Fatalf("expected selected line inside details, got %d for %d lines", selectedLine, len(lines))
+	}
+	if !strings.Contains(lines[selectedLine], "First hunk explains the state change.") {
+		t.Fatalf("expected selected line to anchor the hunk prose, got %q", lines[selectedLine])
+	}
+	if strings.Contains(lines[selectedLine], "main.go") {
+		t.Fatalf("expected selected line to avoid anchoring the hunk reference, got %q", lines[selectedLine])
+	}
+}
+
 func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped

@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
@@ -598,10 +599,6 @@ func (m *Model) ensureSelectedVisible(p panel) {
 		m.leftList.Select(m.currentLeftIndex())
 	case panelCenter:
 		m.syncViewportContent()
-		_, selectedLine := m.centerScrollStyledLines(m.centerViewport.Width())
-		if selectedLine >= 0 {
-			m.centerViewport.EnsureVisible(selectedLine, 0, 0)
-		}
 	case panelRight:
 		m.rightViewport.EnsureVisible(m.selectedHunk, 0, 0)
 	}
@@ -792,12 +789,31 @@ func (m *Model) syncLeftList() {
 }
 
 func (m *Model) syncViewportContent() {
-	centerLines, selectedLine := m.centerScrollStyledLines(m.centerViewport.Width())
+	centerLines, selectedStart, selectedEnd := m.centerScrollStyledLineRange(m.centerViewport.Width())
 	m.centerViewport.SetContentLines(centerLines)
-	if selectedLine >= 0 {
-		m.centerViewport.EnsureVisible(selectedLine, 0, 0)
+	if selectedStart >= 0 {
+		ensureViewportRangeVisible(&m.centerViewport, selectedStart, selectedEnd)
 	}
 	m.rightViewport.SetContentLines(m.rightStyledLines())
+}
+
+func ensureViewportRangeVisible(v *viewport.Model, start, end int) {
+	if start < 0 {
+		return
+	}
+	if end < start {
+		end = start
+	}
+	height := max(1, v.Height())
+	top := v.YOffset()
+	switch {
+	case start < top:
+		v.SetYOffset(start)
+	case end-start+1 >= height:
+		v.SetYOffset(start)
+	default:
+		v.SetYOffset(end - height + 1)
+	}
 }
 
 func (m Model) focusVisibleLines() int {
