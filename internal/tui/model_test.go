@@ -172,15 +172,19 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	m.syncComponents()
 
 	content := m.renderWelcome()
-	if !strings.Contains(content, "░░███░░░░███") || !strings.Contains(content, "░▒▒▓██████████") || !strings.Contains(content, "██████████") {
+	if !strings.Contains(content, "░░███░░░░███") || !strings.Contains(content, "░▒▒▓███████") || !strings.Contains(content, "██████████") {
 		t.Fatalf("expected Slice cake Diff art, got:\n%s", content)
 	}
-	line := firstLineContaining(content, "░▒▒▓██████████")
+	topLine := firstLineContaining(content, "░▒▒▓███████")
+	if strings.Contains(topLine, "░░███░░░░███") || strings.Contains(topLine, "██████████    ███") {
+		t.Fatalf("expected cake top to sit above vertically centered text, got %q", topLine)
+	}
+	line := firstLineContaining(content, "░▒▓▓█████▓▒░░")
 	if line == "" {
-		t.Fatalf("expected cake mark in wordmark, got:\n%s", content)
+		t.Fatalf("expected cake body in wordmark, got:\n%s", content)
 	}
 	sliceIndex := strings.Index(line, "█████████")
-	cakeIndex := strings.Index(line, "░▒▒▓██████████")
+	cakeIndex := strings.Index(line, "░▒▓▓█████▓▒░░")
 	diffIndex := strings.LastIndex(line, "██████████")
 	if sliceIndex < 0 || cakeIndex < 0 || diffIndex < 0 || !(sliceIndex < cakeIndex && cakeIndex < diffIndex) {
 		t.Fatalf("expected Slice, then cake, then Diff on one row, got %q", line)

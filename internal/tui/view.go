@@ -225,9 +225,11 @@ func horizontalArt(parts ...[]string) []string {
 	for row := 0; row < height; row++ {
 		pieces := make([]string, len(parts))
 		for i, part := range parts {
+			offset := max(0, (height-len(part))/2)
+			partRow := row - offset
 			line := ""
-			if row < len(part) {
-				line = part[row]
+			if partRow >= 0 && partRow < len(part) {
+				line = part[partRow]
 			}
 			pieces[i] = padRight(line, widths[i])
 		}
