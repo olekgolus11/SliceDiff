@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 	"github.com/olekgolus11/SliceDiff/internal/config"
 	"github.com/olekgolus11/SliceDiff/internal/diff"
@@ -309,11 +310,30 @@ func TestStyledDiffLinesUseSemanticColors(t *testing.T) {
 	if !strings.Contains(diffView, "\x1b[") {
 		t.Fatalf("expected ANSI styling in diff view, got:\n%s", diffView)
 	}
-	if !strings.Contains(diffView, "+ a") {
+	plain := ansi.Strip(diffView)
+	if !strings.Contains(plain, "+ a") {
 		t.Fatalf("expected added line marker, got:\n%s", diffView)
 	}
-	if !strings.Contains(diffView, "- old") {
+	if !strings.Contains(plain, "- old") {
 		t.Fatalf("expected deleted line marker, got:\n%s", diffView)
+	}
+}
+
+func TestStyledDiffLinesUseLanguageColor(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineAdded,
+		NewNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "\x1b[38;2;") {
+		t.Fatalf("expected truecolor syntax highlighting in diff view, got:\n%s", rendered)
+	}
+	if plain := ansi.Strip(rendered); !strings.Contains(plain, "+ func main() { return }") {
+		t.Fatalf("expected highlighted diff to preserve plain text, got:\n%s", rendered)
 	}
 }
 

@@ -767,12 +767,12 @@ func (m Model) rightStyledLines() []string {
 	}
 	lines = append(lines, "")
 	for _, line := range hunk.Lines {
-		lines = append(lines, m.renderDiffLine(line))
+		lines = append(lines, m.renderDiffLine(hunk.FilePath, line))
 	}
 	return lines
 }
 
-func (m Model) renderDiffLine(line diff.DiffLine) string {
+func (m Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 	oldNo := formatLineNumber(line.OldNumber)
 	newNo := formatLineNumber(line.NewNumber)
 	sign := " "
@@ -786,7 +786,11 @@ func (m Model) renderDiffLine(line diff.DiffLine) string {
 		style = m.style.diffDeleted
 	}
 	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
-	body := style.Render(fmt.Sprintf("%s %s", sign, line.Content))
+	code, ok := highlightDiffCode(filePath, line.Content)
+	if !ok {
+		code = style.Render(line.Content)
+	}
+	body := style.Render(sign+" ") + code
 	return gutter + body
 }
 
