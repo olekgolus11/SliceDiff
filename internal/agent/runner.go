@@ -77,6 +77,9 @@ func BuildPrompt(runner RunnerName, pr github.PullRequest) ([]byte, error) {
 			"Every slice must reference one or more known hunk IDs.",
 			"Every slice must include reading_steps with exactly one step per hunk_ref, in the same order.",
 			"Each reading step body should explain in 1-3 plain-language sentences what changed in that hunk and why it matters to the slice.",
+			"Hunks include signal metadata. Prioritize signal=focus hunks for semantic slices.",
+			"Keep signal=quiet hunks terse. Formatting, import, and whitespace churn should not compete with behavior changes.",
+			"Treat signal=audit hunks as recoverable verification work for generated, vendor, and lockfile changes.",
 			"Use the schema_version slicediff.slice.v2.",
 		},
 		"required_output_shape": map[string]any{

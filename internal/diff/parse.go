@@ -23,6 +23,7 @@ func ParseUnified(raw string) ([]DiffFile, error) {
 
 	finishHunk := func() {
 		if current != nil && currentHunk != nil {
+			currentHunk.Signal, currentHunk.Reason = ClassifyHunk(current.Path, *currentHunk)
 			current.Hunks = append(current.Hunks, *currentHunk)
 			currentHunk = nil
 		}
@@ -188,17 +189,7 @@ func IsGeneratedPath(path string) bool {
 			return true
 		}
 	}
-	lockfiles := []string{
-		"go.sum",
-		"package-lock.json",
-		"pnpm-lock.yaml",
-		"yarn.lock",
-		"bun.lockb",
-		"cargo.lock",
-		"composer.lock",
-		"poetry.lock",
-	}
-	for _, lockfile := range lockfiles {
+	for _, lockfile := range lockfileNames() {
 		if strings.HasSuffix(lower, lockfile) {
 			return true
 		}

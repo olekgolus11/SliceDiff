@@ -8,6 +8,14 @@ const (
 	LineDeleted LineType = "deleted"
 )
 
+type HunkSignal string
+
+const (
+	HunkSignalFocus HunkSignal = "focus"
+	HunkSignalQuiet HunkSignal = "quiet"
+	HunkSignalAudit HunkSignal = "audit"
+)
+
 type DiffLine struct {
 	Type      LineType `json:"type" yaml:"type"`
 	OldNumber int      `json:"old_number,omitempty" yaml:"old_number,omitempty"`
@@ -24,6 +32,8 @@ type DiffHunk struct {
 	NewStart int        `json:"new_start" yaml:"new_start"`
 	NewLines int        `json:"new_lines" yaml:"new_lines"`
 	Lines    []DiffLine `json:"lines" yaml:"lines"`
+	Signal   HunkSignal `json:"signal" yaml:"signal"`
+	Reason   string     `json:"reason,omitempty" yaml:"reason,omitempty"`
 }
 
 type DiffFile struct {

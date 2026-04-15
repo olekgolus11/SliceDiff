@@ -67,6 +67,8 @@ type reviewItem struct {
 	HunkRefs     []agent.HunkRef
 	ReadingSteps []agent.ReadingStep
 	IsUnassigned bool
+	IsQuiet      bool
+	IsAudit      bool
 }
 
 type navigationKind int
@@ -124,6 +126,7 @@ type keyMap struct {
 	Home     key.Binding
 	End      key.Binding
 	View     key.Binding
+	Focus    key.Binding
 	Regen    key.Binding
 	Help     key.Binding
 	Enter    key.Binding
@@ -131,14 +134,14 @@ type keyMap struct {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Tab, k.Up, k.Down, k.PageUp, k.PageDown, k.View, k.Help, k.Quit}
+	return []key.Binding{k.Tab, k.Up, k.Down, k.PageUp, k.PageDown, k.View, k.Focus, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Left, k.Right, k.Tab, k.Enter},
 		{k.Up, k.Down, k.PageUp, k.PageDown, k.Home, k.End},
-		{k.View, k.Regen, k.Help, k.Quit},
+		{k.View, k.Focus, k.Regen, k.Help, k.Quit},
 	}
 }
 

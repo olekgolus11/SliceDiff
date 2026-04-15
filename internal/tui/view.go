@@ -231,27 +231,22 @@ func (m Model) headerCounts() string {
 	if m.pr == nil {
 		return "loading"
 	}
-	files := len(m.pr.Files)
-	hunks := 0
-	generated := 0
-	binary := 0
+	focus := 0
+	quiet := 0
+	audit := 0
 	for _, file := range m.pr.Files {
-		hunks += len(file.Hunks)
-		if file.IsGenerated {
-			generated++
+		for _, hunk := range file.Hunks {
+			switch hunkSignal(hunk) {
+			case diff.HunkSignalQuiet:
+				quiet++
+			case diff.HunkSignalAudit:
+				audit++
+			default:
+				focus++
+			}
 		}
-		if file.IsBinary {
-			binary++
-		}
 	}
-	if m.mode == modeGrouped && m.slices != nil {
-		return fmt.Sprintf("%d slices / %d files / %d hunks", len(m.reviewItems()), files, hunks)
-	}
-	extras := ""
-	if generated > 0 || binary > 0 {
-		extras = fmt.Sprintf(" / %d gen / %d bin", generated, binary)
-	}
-	return fmt.Sprintf("%d files / %d hunks%s", files, hunks, extras)
+	return fmt.Sprintf("%d focus / %d quiet / %d audit", focus, quiet, audit)
 }
 
 func (m Model) renderFooter() string {
@@ -362,6 +357,12 @@ func (m Model) leftItems() []navigationItem {
 			desc := fmt.Sprintf("%s / %s confidence / %d hunks", item.Category, item.Confidence, len(item.HunkRefs))
 			if item.IsUnassigned {
 				desc = fmt.Sprintf("uncertain / needs review / %d hunks", len(item.HunkRefs))
+			}
+			if item.IsQuiet {
+				desc = fmt.Sprintf("format/import whitespace, still reviewable / %d hunks", len(item.HunkRefs))
+			}
+			if item.IsAudit {
+				desc = fmt.Sprintf("generated/vendor/lockfile verification / %d hunks", len(item.HunkRefs))
 			}
 			nav = append(nav, navigationItem{
 				kind:        navigationSlice,
@@ -624,8 +625,14 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 	selectedLine := -1
 	for i, hunk := range file.Hunks {
 		line := fmt.Sprintf("  %s  %s", hunk.ID, hunk.Header)
+		if hunkSignal(hunk) != diff.HunkSignalFocus {
+			line += "  " + string(hunkSignal(hunk)) + ":" + hunkQuietReason(hunk)
+		}
 		if i == m.selectedHunk {
 			line = m.style.diffSelected.Render("> " + hunk.ID + "  " + hunk.Header)
+			if hunkSignal(hunk) != diff.HunkSignalFocus {
+				line += " " + m.style.subtle.Render(string(hunkSignal(hunk))+":"+hunkQuietReason(hunk))
+			}
 			selectedLine = len(lines)
 		} else {
 			line = m.style.diffContext.Render(line)
@@ -755,8 +762,11 @@ func (m Model) rightStyledLines() []string {
 	lines := []string{
 		m.style.emphasis.Render(hunk.FilePath),
 		m.style.diffHeader.Render(hunk.Header),
-		"",
 	}
+	if hunkSignal(*hunk) != diff.HunkSignalFocus {
+		lines = append(lines, m.renderBadges(string(hunkSignal(*hunk)), hunkQuietReason(*hunk)))
+	}
+	lines = append(lines, "")
 	for _, line := range hunk.Lines {
 		lines = append(lines, m.renderDiffLine(line))
 	}
@@ -1101,6 +1111,13 @@ func generatedLabel(file *diff.DiffFile) string {
 		return "generated"
 	}
 	return "source"
+}
+
+func hunkQuietReason(hunk diff.DiffHunk) string {
+	if hunk.Reason != "" {
+		return hunk.Reason
+	}
+	return "quiet"
 }
 
 func formatLineNumber(n int) string {

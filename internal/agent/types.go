@@ -4,7 +4,7 @@ import "github.com/olekgolus11/SliceDiff/internal/diff"
 
 const (
 	SchemaVersion = "slicediff.slice.v2"
-	PromptVersion = "prompt.v2"
+	PromptVersion = "prompt.v4"
 )
 
 type RunnerName string

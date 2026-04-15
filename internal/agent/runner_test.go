@@ -3,7 +3,11 @@ package agent
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/olekgolus11/SliceDiff/internal/diff"
+	"github.com/olekgolus11/SliceDiff/internal/github"
 )
 
 func TestWriteSchemaFileIncludesTypesForConstFields(t *testing.T) {
@@ -73,4 +77,56 @@ func containsString(values []any, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildPromptIncludesHunkSignalMetadata(t *testing.T) {
+	pr := github.PullRequest{
+		HeadSHA: "abc123",
+		Files: []diff.DiffFile{{
+			Path: "main.go",
+			Hunks: []diff.DiffHunk{{
+				ID:       "h1",
+				FilePath: "main.go",
+				Header:   "@@ -1 +1 @@",
+				Signal:   diff.HunkSignalQuiet,
+				Reason:   "imports",
+			}},
+		}},
+	}
+	raw, err := BuildPrompt(RunnerCodex, pr)
+	if err != nil {
+		t.Fatalf("BuildPrompt returned error: %v", err)
+	}
+	var payload struct {
+		Instructions []string           `json:"instructions"`
+		PullRequest  github.PullRequest `json:"pull_request"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("prompt is not valid JSON: %v", err)
+	}
+	if PromptVersion != "prompt.v4" {
+		t.Fatalf("expected prompt version bump to prompt.v4, got %q", PromptVersion)
+	}
+	if got := payload.PullRequest.Files[0].Hunks[0].Signal; got != diff.HunkSignalQuiet {
+		t.Fatalf("expected prompt hunk signal metadata, got %q", got)
+	}
+	if got := payload.PullRequest.Files[0].Hunks[0].Reason; got != "imports" {
+		t.Fatalf("expected prompt hunk reason metadata, got %q", got)
+	}
+	foundQuietInstruction := false
+	foundAuditInstruction := false
+	for _, instruction := range payload.Instructions {
+		if strings.Contains(instruction, "signal=quiet") {
+			foundQuietInstruction = true
+		}
+		if strings.Contains(instruction, "signal=audit") {
+			foundAuditInstruction = true
+		}
+	}
+	if !foundQuietInstruction {
+		t.Fatalf("expected prompt to instruct quiet hunk handling, got %#v", payload.Instructions)
+	}
+	if !foundAuditInstruction {
+		t.Fatalf("expected prompt to instruct audit hunk handling, got %#v", payload.Instructions)
+	}
 }

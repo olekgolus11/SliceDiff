@@ -485,6 +485,89 @@ func TestGroupedReadingStepSelectionDrivesRightDiff(t *testing.T) {
 	}
 }
 
+func TestGroupedFocusModeAddsQuietChangesAndFiltersSlices(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.markHunkSignal("h2", diff.HunkSignalQuiet, "imports")
+
+	items := m.reviewItems()
+	if len(items) != 3 {
+		t.Fatalf("expected two focus slices plus quiet changes, got %+v", items)
+	}
+	if !items[2].IsQuiet || items[2].Title != "Quiet changes" {
+		t.Fatalf("expected quiet changes item at the end, got %+v", items[2])
+	}
+	if len(items[0].HunkRefs) != 2 {
+		t.Fatalf("expected quiet hunk filtered from first slice, got %+v", items[0].HunkRefs)
+	}
+	for _, ref := range items[0].HunkRefs {
+		if ref.HunkID == "h2" {
+			t.Fatalf("expected h2 to be filtered from focus slice, got %+v", items[0].HunkRefs)
+		}
+	}
+	left := strings.Join(m.leftLines(), "\n")
+	if !strings.Contains(left, "Quiet changes") {
+		t.Fatalf("expected quiet changes in left nav, got:\n%s", left)
+	}
+}
+
+func TestGroupedFocusModeAddsAuditChanges(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.markHunkSignal("h3", diff.HunkSignalAudit, "generated")
+
+	items := m.reviewItems()
+	if len(items) != 4 {
+		t.Fatalf("expected focus slices, unassigned, and audit changes, got %+v", items)
+	}
+	if !items[3].IsAudit || items[3].Title != "Audit changes" {
+		t.Fatalf("expected audit changes item at the end, got %+v", items[3])
+	}
+	if len(items[0].HunkRefs) != 2 {
+		t.Fatalf("expected audit hunk filtered from first slice, got %+v", items[0].HunkRefs)
+	}
+	if got := m.headerCounts(); !strings.Contains(got, "1 audit") {
+		t.Fatalf("expected audit count in header, got %q", got)
+	}
+}
+
+func TestFocusToggleShowsAllGroupedHunks(t *testing.T) {
+	m := testModel()
+	m.stage = stageReady
+	m.mode = modeGrouped
+	m.markHunkSignal("h2", diff.HunkSignalQuiet, "imports")
+
+	got, _ := m.handleReadyKey(keyPress("f"))
+	if got.focusOnly {
+		t.Fatal("expected focus toggle to show all changes")
+	}
+	items := got.reviewItems()
+	if len(items) != 3 {
+		t.Fatalf("expected original slices plus unassigned in show-all mode, got %+v", items)
+	}
+	if len(items[0].HunkRefs) != 3 {
+		t.Fatalf("expected quiet hunk restored to original slice, got %+v", items[0].HunkRefs)
+	}
+	for _, item := range items {
+		if item.IsQuiet {
+			t.Fatalf("did not expect synthetic quiet item in show-all mode, got %+v", item)
+		}
+	}
+}
+
+func TestRawModeStillShowsQuietHunks(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.selectedFile = 0
+	m.markHunkSignal("h2", diff.HunkSignalQuiet, "imports")
+
+	lines, _ := m.centerScrollStyledLines(80)
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "h2") || !strings.Contains(rendered, "quiet:imports") {
+		t.Fatalf("expected raw mode to expose quiet hunk with reason, got:\n%s", rendered)
+	}
+}
+
 func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
@@ -726,6 +809,18 @@ func testModel() Model {
 	}
 	m.syncComponents()
 	return m
+}
+
+func (m *Model) markHunkSignal(id string, signal diff.HunkSignal, reason string) {
+	for i := range m.pr.Files {
+		for j := range m.pr.Files[i].Hunks {
+			if m.pr.Files[i].Hunks[j].ID == id {
+				m.pr.Files[i].Hunks[j].Signal = signal
+				m.pr.Files[i].Hunks[j].Reason = reason
+				return
+			}
+		}
+	}
 }
 
 func keyPress(s string) tea.KeyPressMsg {
