@@ -164,7 +164,7 @@ func TestWelcomePickerEmptyAndErrorStatesRender(t *testing.T) {
 
 func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	m := New(Options{Config: &config.Store{}})
-	m.width = 124
+	m.width = 148
 	m.height = 52
 	m.stage = stageWelcome
 	m.pickerBusy = false
@@ -172,15 +172,15 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	m.syncComponents()
 
 	content := m.renderWelcome()
-	if !strings.Contains(content, "░░███░░░░███") || !strings.Contains(content, "▒▓▓████▓▒") || !strings.Contains(content, "██████████") {
+	if !strings.Contains(content, "░░███░░░░███") || !strings.Contains(content, "░░▒▒▓▓██████████") || !strings.Contains(content, "██████████") {
 		t.Fatalf("expected Slice cake Diff art, got:\n%s", content)
 	}
-	line := firstLineContaining(content, "▒▓▓████▓▒")
+	line := firstLineContaining(content, "░░▒▒▓▓██████████")
 	if line == "" {
 		t.Fatalf("expected cake mark in wordmark, got:\n%s", content)
 	}
 	sliceIndex := strings.Index(line, "█████████")
-	cakeIndex := strings.Index(line, "▒▓▓████▓▒")
+	cakeIndex := strings.Index(line, "░░▒▒▓▓██████████")
 	diffIndex := strings.LastIndex(line, "██████████")
 	if sliceIndex < 0 || cakeIndex < 0 || diffIndex < 0 || !(sliceIndex < cakeIndex && cakeIndex < diffIndex) {
 		t.Fatalf("expected Slice, then cake, then Diff on one row, got %q", line)
@@ -190,13 +190,16 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	}
 }
 
-func TestWelcomeArtIsOmittedWhenSliceCakeDiffDoesNotFit(t *testing.T) {
+func TestWelcomeArtFallsBackToLargeCakeSliceWhenRebusDoesNotFit(t *testing.T) {
 	m := New(Options{Config: &config.Store{}})
 
 	art := m.renderWelcomeArt(80, 21)
 
-	if art != "" {
-		t.Fatalf("expected art to be omitted when the rebus does not fit, got:\n%s", art)
+	if strings.Contains(art, "░░███░░░░███") {
+		t.Fatalf("expected Slice wordmark to be omitted when the rebus does not fit, got:\n%s", art)
+	}
+	if !strings.Contains(art, "░▒▓▓█████▓▒░░") || !strings.Contains(art, "░▒▓███▓▓████░") {
+		t.Fatalf("expected large cake-slice fallback art, got:\n%s", art)
 	}
 }
 
