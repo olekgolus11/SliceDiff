@@ -361,6 +361,30 @@ func TestStyledDiffLinesKeepDeletedBackgroundWithLanguageColor(t *testing.T) {
 	}
 }
 
+func TestStyledDiffLinesCacheRenderedDiffLines(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.diffLineCache = make(map[string]string)
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineAdded,
+		NewNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	_ = m.rightStyledLines()
+	if len(m.diffLineCache) != 1 {
+		t.Fatalf("expected one cached diff line, got %d", len(m.diffLineCache))
+	}
+	for key := range m.diffLineCache {
+		m.diffLineCache[key] = "cached line"
+	}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "cached line") {
+		t.Fatalf("expected cached rendered diff line, got:\n%s", rendered)
+	}
+}
+
 func TestHelpExpandsInFooter(t *testing.T) {
 	m := testModel()
 	collapsed := m.renderFooter()

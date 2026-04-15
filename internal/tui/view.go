@@ -742,7 +742,7 @@ func (m Model) rightLines() []string {
 	return lines
 }
 
-func (m Model) rightStyledLines() []string {
+func (m *Model) rightStyledLines() []string {
 	hunk := m.selectedDiffHunk()
 	if hunk == nil {
 		if file := m.currentFile(); file != nil && file.IsBinary {
@@ -772,7 +772,12 @@ func (m Model) rightStyledLines() []string {
 	return lines
 }
 
-func (m Model) renderDiffLine(filePath string, line diff.DiffLine) string {
+func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
+	cacheKey := diffLineCacheKey(filePath, line)
+	if cached, ok := m.diffLineCache[cacheKey]; ok {
+		return cached
+	}
+
 	oldNo := formatLineNumber(line.OldNumber)
 	newNo := formatLineNumber(line.NewNumber)
 	sign := " "
@@ -791,7 +796,16 @@ func (m Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 		code = style.Render(line.Content)
 	}
 	body := style.Render(sign+" ") + code
-	return gutter + body
+	rendered := gutter + body
+	if m.diffLineCache == nil {
+		m.diffLineCache = make(map[string]string)
+	}
+	m.diffLineCache[cacheKey] = rendered
+	return rendered
+}
+
+func diffLineCacheKey(filePath string, line diff.DiffLine) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, line.Content)
 }
 
 func (m Model) selectedDiffHunk() *diff.DiffHunk {

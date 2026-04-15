@@ -29,6 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.synced(spinnerCmd)
 		}
 		m.pr = msg.pr
+		m.diffLineCache = make(map[string]string)
 		m.clearError()
 		m.status = "PR loaded."
 		next, cmd := m.maybeStartAI()
