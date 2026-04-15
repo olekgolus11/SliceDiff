@@ -3,8 +3,8 @@ package agent
 import "github.com/olekgolus11/SliceDiff/internal/diff"
 
 const (
-	SchemaVersion = "slicediff.slice.v2"
-	PromptVersion = "prompt.v4"
+	SchemaVersion = "slicediff.slice.v3"
+	PromptVersion = "prompt.v5"
 )
 
 type RunnerName string
@@ -33,7 +33,6 @@ type Slice struct {
 	Title        string        `json:"title" yaml:"title"`
 	Summary      string        `json:"summary" yaml:"summary"`
 	Category     string        `json:"category" yaml:"category"`
-	Confidence   string        `json:"confidence" yaml:"confidence"`
 	Rationale    string        `json:"rationale" yaml:"rationale"`
 	HunkRefs     []HunkRef     `json:"hunk_refs" yaml:"hunk_refs"`
 	ReadingSteps []ReadingStep `json:"reading_steps" yaml:"reading_steps"`

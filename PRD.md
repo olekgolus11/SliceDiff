@@ -150,7 +150,6 @@ SliceDiff is a Go Bubbletea TUI that targets a single GitHub PR through the `gh`
 - Grouping rationale that names the files, hunks, or symbols tying the slice together.
 - Slice category such as feature, behavior change, refactor, tests, generated code, documentation, configuration, or uncertain.
 - Hunk references for every grouped claim.
-- Confidence score or confidence label for each slice.
 - Optional warnings when the agent could not confidently group part of the diff.
 
 ### Evaluation Strategy
@@ -200,7 +199,7 @@ SliceDiff is a local terminal application built in Go using the Bubbletea Elm ar
 
 - MVP layout should use a keyboard-first multi-panel interface:
   - Left panel: Semantic slice list.
-  - Center panel: Slice explanation, grouped files, confidence, and rationale.
+  - Center panel: Slice explanation, grouped files, and rationale.
   - Right or lower panel: Raw hunk preview and exact diff context.
   - Status bar: Current PR, AI status, selected hunk count, active runner, and keybinding hints.
 

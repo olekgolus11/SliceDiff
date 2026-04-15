@@ -37,7 +37,6 @@ type Model struct {
 	selectedSetup  int
 	selectedPicker int
 	showHelp       bool
-	focusOnly      bool
 	wheelTarget    panel
 	wheelDirection int
 	wheelRemainder int
@@ -85,7 +84,6 @@ func New(opts Options) Model {
 		help:           newHelp(style),
 		spinner:        newSpinner(style),
 		keys:           defaultKeyMap(),
-		focusOnly:      true,
 		pickerBusy:     !opts.HasTarget,
 		style:          style,
 	}
@@ -310,31 +308,24 @@ func (m Model) reviewItems() []reviewItem {
 			ID:           slice.ID,
 			Title:        slice.Title,
 			Category:     slice.Category,
-			Confidence:   slice.Confidence,
 			Summary:      slice.Summary,
 			Rationale:    slice.Rationale,
 			HunkRefs:     slice.HunkRefs,
 			ReadingSteps: slice.ReadingSteps,
 		}
-		if m.focusOnly {
-			item = m.focusReviewItem(item)
-			if len(item.HunkRefs) == 0 {
-				continue
-			}
+		item = m.focusReviewItem(item)
+		if len(item.HunkRefs) == 0 {
+			continue
 		}
 		items = append(items, item)
 	}
 	if len(m.slices.UnassignedHunks) > 0 {
-		refs := m.slices.UnassignedHunks
-		if m.focusOnly {
-			refs = m.focusRefs(refs)
-		}
+		refs := m.focusRefs(m.slices.UnassignedHunks)
 		if len(refs) > 0 {
 			items = append(items, reviewItem{
 				ID:           "unassigned",
 				Title:        "Unassigned or uncertain hunks",
 				Category:     "uncertain",
-				Confidence:   "low",
 				Summary:      "The AI runner did not confidently assign these hunks to a semantic slice.",
 				Rationale:    "SliceDiff keeps these hunks visible so no part of the PR is hidden.",
 				HunkRefs:     refs,
@@ -343,13 +334,11 @@ func (m Model) reviewItems() []reviewItem {
 			})
 		}
 	}
-	if m.focusOnly {
-		if quiet := m.signalReviewItem(diff.HunkSignalQuiet); quiet != nil {
-			items = append(items, *quiet)
-		}
-		if audit := m.signalReviewItem(diff.HunkSignalAudit); audit != nil {
-			items = append(items, *audit)
-		}
+	if quiet := m.signalReviewItem(diff.HunkSignalQuiet); quiet != nil {
+		items = append(items, *quiet)
+	}
+	if audit := m.signalReviewItem(diff.HunkSignalAudit); audit != nil {
+		items = append(items, *audit)
 	}
 	return items
 }
@@ -404,7 +393,6 @@ func (m Model) signalReviewItem(signal diff.HunkSignal) *reviewItem {
 		item.ID = "audit"
 		item.Title = "Audit changes"
 		item.Category = "audit"
-		item.Confidence = "verify"
 		item.Summary = "Generated, vendor, and lockfile changes are collapsed here for a quick verification pass."
 		item.Rationale = "These changes may be mechanical, but they deserve audit instead of narrative review."
 		item.IsAudit = true
@@ -412,7 +400,6 @@ func (m Model) signalReviewItem(signal diff.HunkSignal) *reviewItem {
 		item.ID = "quiet"
 		item.Title = "Quiet changes"
 		item.Category = "quiet"
-		item.Confidence = "skim"
 		item.Summary = "Formatting, imports, and whitespace churn is collapsed here so behavior changes stay prominent."
 		item.Rationale = "Nothing is hidden. These hunks are kept recoverable for quick skim."
 		item.IsQuiet = true

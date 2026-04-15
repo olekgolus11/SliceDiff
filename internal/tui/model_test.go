@@ -329,6 +329,9 @@ func TestHelpExpandsInFooter(t *testing.T) {
 	if !strings.Contains(expanded, "focus left") {
 		t.Fatalf("expected full help in expanded footer, got %q", expanded)
 	}
+	if strings.Contains(expanded, "focus/all") || strings.Contains(expanded, " f ") {
+		t.Fatalf("expected focus/all toggle to be absent from help, got %q", expanded)
+	}
 }
 
 func TestViewConfiguresAltScreenAndMouse(t *testing.T) {
@@ -432,6 +435,9 @@ func TestGroupedDetailsReadingStepsRenderNarrativeAndElideLongFilePaths(t *testi
 	if !strings.Contains(rendered, "Reading order") || !strings.Contains(rendered, "First hunk explains the state change.") {
 		t.Fatalf("expected guided reading prose in details, got:\n%s", rendered)
 	}
+	if !strings.HasPrefix(rendered, "\n") {
+		t.Fatalf("expected one blank line before reading order, got:\n%s", rendered)
+	}
 	if !strings.Contains(rendered, "composeApp/...") {
 		t.Fatalf("expected elided path in reading step source, got:\n%s", rendered)
 	}
@@ -485,7 +491,7 @@ func TestGroupedReadingStepSelectionDrivesRightDiff(t *testing.T) {
 	}
 }
 
-func TestGroupedFocusModeAddsQuietChangesAndFiltersSlices(t *testing.T) {
+func TestGroupedModeAddsQuietChangesAndFiltersSlices(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped
 	m.markHunkSignal("h2", diff.HunkSignalQuiet, "imports")
@@ -509,9 +515,12 @@ func TestGroupedFocusModeAddsQuietChangesAndFiltersSlices(t *testing.T) {
 	if !strings.Contains(left, "Quiet changes") {
 		t.Fatalf("expected quiet changes in left nav, got:\n%s", left)
 	}
+	if strings.Contains(strings.ToLower(left), "confidence") {
+		t.Fatalf("expected left nav to omit confidence, got:\n%s", left)
+	}
 }
 
-func TestGroupedFocusModeAddsAuditChanges(t *testing.T) {
+func TestGroupedModeAddsAuditChanges(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped
 	m.markHunkSignal("h3", diff.HunkSignalAudit, "generated")
@@ -531,27 +540,39 @@ func TestGroupedFocusModeAddsAuditChanges(t *testing.T) {
 	}
 }
 
-func TestFocusToggleShowsAllGroupedHunks(t *testing.T) {
+func TestFocusKeyDoesNotRestoreQuietHunks(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
 	m.mode = modeGrouped
 	m.markHunkSignal("h2", diff.HunkSignalQuiet, "imports")
 
 	got, _ := m.handleReadyKey(keyPress("f"))
-	if got.focusOnly {
-		t.Fatal("expected focus toggle to show all changes")
-	}
 	items := got.reviewItems()
 	if len(items) != 3 {
-		t.Fatalf("expected original slices plus unassigned in show-all mode, got %+v", items)
+		t.Fatalf("expected quiet changes to stay separated after f, got %+v", items)
 	}
-	if len(items[0].HunkRefs) != 3 {
-		t.Fatalf("expected quiet hunk restored to original slice, got %+v", items[0].HunkRefs)
+	if len(items[0].HunkRefs) != 2 {
+		t.Fatalf("expected quiet hunk to stay filtered from semantic slice, got %+v", items[0].HunkRefs)
 	}
-	for _, item := range items {
-		if item.IsQuiet {
-			t.Fatalf("did not expect synthetic quiet item in show-all mode, got %+v", item)
+	for _, ref := range items[0].HunkRefs {
+		if ref.HunkID == "h2" {
+			t.Fatalf("expected h2 to remain separated from semantic slice, got %+v", items[0].HunkRefs)
 		}
+	}
+	if !items[2].IsQuiet {
+		t.Fatalf("expected quiet item to remain present after f, got %+v", items)
+	}
+}
+
+func TestGroupedDetailsOmitConfidence(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+
+	plain, _ := m.centerPlainLines()
+	styled := strings.Join(m.centerOverviewStyledLines(80), "\n")
+	rendered := strings.Join(plain, "\n") + "\n" + styled
+	if strings.Contains(strings.ToLower(rendered), "confidence") {
+		t.Fatalf("expected grouped details to omit confidence, got:\n%s", rendered)
 	}
 }
 
@@ -775,12 +796,11 @@ func testModel() Model {
 		PRHeadSHA:     "sha",
 		Slices: []agent.Slice{
 			{
-				ID:         "s1",
-				Title:      "First",
-				Summary:    "First summary.",
-				Category:   "feature",
-				Confidence: "high",
-				Rationale:  "First rationale.",
+				ID:        "s1",
+				Title:     "First",
+				Summary:   "First summary.",
+				Category:  "feature",
+				Rationale: "First rationale.",
 				HunkRefs: []agent.HunkRef{
 					{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"},
 					{HunkID: "h2", FilePath: "main.go", Header: "@@ -2 +2 @@"},
@@ -793,13 +813,12 @@ func testModel() Model {
 				},
 			},
 			{
-				ID:         "s2",
-				Title:      "Second",
-				Summary:    "Second summary.",
-				Category:   "tests",
-				Confidence: "medium",
-				Rationale:  "Second rationale.",
-				HunkRefs:   []agent.HunkRef{{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}},
+				ID:        "s2",
+				Title:     "Second",
+				Summary:   "Second summary.",
+				Category:  "tests",
+				Rationale: "Second rationale.",
+				HunkRefs:  []agent.HunkRef{{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}},
 				ReadingSteps: []agent.ReadingStep{
 					{HunkRef: agent.HunkRef{HunkID: "h1", FilePath: "main.go", Header: "@@ -1 +1 @@"}, Body: "The test hunk covers the updated behavior."},
 				},

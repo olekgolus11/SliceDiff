@@ -354,7 +354,7 @@ func (m Model) leftItems() []navigationItem {
 		}
 		nav := make([]navigationItem, 0, len(items))
 		for i, item := range items {
-			desc := fmt.Sprintf("%s / %s confidence / %d hunks", item.Category, item.Confidence, len(item.HunkRefs))
+			desc := fmt.Sprintf("%s / %d hunks", item.Category, len(item.HunkRefs))
 			if item.IsUnassigned {
 				desc = fmt.Sprintf("uncertain / needs review / %d hunks", len(item.HunkRefs))
 			}
@@ -501,7 +501,6 @@ func (m Model) centerPlainLines() ([]string, int) {
 		lines := append(prefix, []string{
 			"Title: " + item.Title,
 			"Category: " + item.Category,
-			"Confidence: " + item.Confidence,
 			"",
 			"Summary:",
 		}...)
@@ -565,7 +564,7 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 		}
 		lines := append(prefix,
 			m.style.emphasis.Render(item.Title),
-			m.renderBadges(item.Category, item.Confidence),
+			m.renderBadges(item.Category),
 			"",
 			m.style.section.Render("Summary"),
 		)
@@ -597,14 +596,14 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 		if item == nil {
 			return []string{m.callout("No selected slice.")}, -1
 		}
-		lines := []string{m.style.section.Render("Reading order")}
+		lines := []string{"", m.style.section.Render("Reading order")}
 		selectedLine := -1
 		for i, step := range item.ReadingSteps {
 			selected := i == m.selectedHunk
+			lines = append(lines, m.renderReadingStepBody(step.Body, width, selected)...)
 			if selected {
 				selectedLine = len(lines)
 			}
-			lines = append(lines, m.renderReadingStepBody(step.Body, width, selected)...)
 			lines = append(lines, m.renderReadingStepRef(step.HunkRef, width, selected), "")
 		}
 		return lines, selectedLine

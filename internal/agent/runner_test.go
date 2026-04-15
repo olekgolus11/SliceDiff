@@ -57,6 +57,16 @@ func TestWriteSchemaFileIncludesTypesForConstFields(t *testing.T) {
 	if !containsString(required, "reading_steps") {
 		t.Fatalf("slice schema must require reading_steps, got %#v", required)
 	}
+	if containsString(required, "confidence") {
+		t.Fatalf("slice schema must not require confidence, got %#v", required)
+	}
+	propertiesDef, ok := sliceDef["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("slice properties missing or invalid: %#v", sliceDef["properties"])
+	}
+	if _, ok := propertiesDef["confidence"]; ok {
+		t.Fatalf("slice schema must not expose confidence, got %#v", propertiesDef)
+	}
 	stepDef, ok := defs["reading_step"].(map[string]any)
 	if !ok {
 		t.Fatalf("reading_step definition missing or invalid: %#v", defs["reading_step"])
@@ -68,6 +78,30 @@ func TestWriteSchemaFileIncludesTypesForConstFields(t *testing.T) {
 	if !containsString(stepRequired, "body") {
 		t.Fatalf("reading_step schema must require body, got %#v", stepRequired)
 	}
+}
+
+func TestCodexExecArgsPinModel(t *testing.T) {
+	args := codexExecArgs("schema.json", "out.json")
+	if !containsString(stringSliceToAny(args), "--model") {
+		t.Fatalf("expected codex args to include --model, got %#v", args)
+	}
+	for i, arg := range args {
+		if arg == "--model" {
+			if i+1 >= len(args) || args[i+1] != "gpt-5.4-mini" {
+				t.Fatalf("expected codex model gpt-5.4-mini after --model, got %#v", args)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected codex args to include model flag, got %#v", args)
+}
+
+func stringSliceToAny(values []string) []any {
+	out := make([]any, 0, len(values))
+	for _, value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func containsString(values []any, want string) bool {
@@ -104,8 +138,8 @@ func TestBuildPromptIncludesHunkSignalMetadata(t *testing.T) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatalf("prompt is not valid JSON: %v", err)
 	}
-	if PromptVersion != "prompt.v4" {
-		t.Fatalf("expected prompt version bump to prompt.v4, got %q", PromptVersion)
+	if PromptVersion != "prompt.v5" {
+		t.Fatalf("expected prompt version bump to prompt.v5, got %q", PromptVersion)
 	}
 	if got := payload.PullRequest.Files[0].Hunks[0].Signal; got != diff.HunkSignalQuiet {
 		t.Fatalf("expected prompt hunk signal metadata, got %q", got)

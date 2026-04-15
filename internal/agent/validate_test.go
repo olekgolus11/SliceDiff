@@ -16,7 +16,7 @@ func TestParseSliceSetValidatesKnownHunks(t *testing.T) {
 		}},
 	}}
 	raw := []byte(`{
-		"schema_version": "slicediff.slice.v2",
+		"schema_version": "slicediff.slice.v3",
 		"runner": "codex",
 		"prompt_version": "prompt.v2",
 		"pr_head_sha": "abc",
@@ -25,7 +25,6 @@ func TestParseSliceSetValidatesKnownHunks(t *testing.T) {
 			"title": "Update main",
 			"summary": "Updates main.",
 			"category": "behavior",
-			"confidence": "high",
 			"rationale": "The hunk changes main.go.",
 			"hunk_refs": [{"hunk_id": "h1", "file_path": "main.go", "header": "@@ -1 +1 @@"}],
 			"reading_steps": [{
@@ -55,7 +54,7 @@ func TestParseSliceSetRejectsUnknownHunk(t *testing.T) {
 		}},
 	}}
 	raw := []byte(`{
-		"schema_version": "slicediff.slice.v2",
+		"schema_version": "slicediff.slice.v3",
 		"runner": "codex",
 		"prompt_version": "prompt.v2",
 		"pr_head_sha": "abc",
@@ -64,7 +63,6 @@ func TestParseSliceSetRejectsUnknownHunk(t *testing.T) {
 			"title": "Update main",
 			"summary": "Updates main.",
 			"category": "behavior",
-			"confidence": "high",
 			"rationale": "The hunk changes main.go.",
 			"hunk_refs": [{"hunk_id": "h999", "file_path": "main.go", "header": "@@ -1 +1 @@"}],
 			"reading_steps": [{
@@ -90,7 +88,7 @@ func TestParseSliceSetRejectsMissingReadingStep(t *testing.T) {
 		}},
 	}}
 	raw := []byte(`{
-		"schema_version": "slicediff.slice.v2",
+		"schema_version": "slicediff.slice.v3",
 		"runner": "codex",
 		"prompt_version": "prompt.v2",
 		"pr_head_sha": "abc",
@@ -99,7 +97,6 @@ func TestParseSliceSetRejectsMissingReadingStep(t *testing.T) {
 			"title": "Update main",
 			"summary": "Updates main.",
 			"category": "behavior",
-			"confidence": "high",
 			"rationale": "The hunk changes main.go.",
 			"hunk_refs": [{"hunk_id": "h1", "file_path": "main.go", "header": "@@ -1 +1 @@"}],
 			"reading_steps": []
@@ -121,7 +118,7 @@ func TestParseSliceSetRejectsDuplicateReadingStep(t *testing.T) {
 		},
 	}}
 	raw := []byte(`{
-		"schema_version": "slicediff.slice.v2",
+		"schema_version": "slicediff.slice.v3",
 		"runner": "codex",
 		"prompt_version": "prompt.v2",
 		"pr_head_sha": "abc",
@@ -130,7 +127,6 @@ func TestParseSliceSetRejectsDuplicateReadingStep(t *testing.T) {
 			"title": "Update main",
 			"summary": "Updates main.",
 			"category": "behavior",
-			"confidence": "high",
 			"rationale": "The hunk changes main.go.",
 			"hunk_refs": [
 				{"hunk_id": "h1", "file_path": "main.go", "header": "@@ -1 +1 @@"},
@@ -161,7 +157,7 @@ func TestParseSliceSetRejectsOutOfSliceReadingStep(t *testing.T) {
 		},
 	}}
 	raw := []byte(`{
-		"schema_version": "slicediff.slice.v2",
+		"schema_version": "slicediff.slice.v3",
 		"runner": "codex",
 		"prompt_version": "prompt.v2",
 		"pr_head_sha": "abc",
@@ -170,7 +166,6 @@ func TestParseSliceSetRejectsOutOfSliceReadingStep(t *testing.T) {
 			"title": "Update main",
 			"summary": "Updates main.",
 			"category": "behavior",
-			"confidence": "high",
 			"rationale": "The hunk changes main.go.",
 			"hunk_refs": [{"hunk_id": "h1", "file_path": "main.go", "header": "@@ -1 +1 @@"}],
 			"reading_steps": [{

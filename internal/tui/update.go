@@ -432,16 +432,6 @@ func (m Model) handleReadyKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.resetScrolls()
 			m.status = "Grouped slice view."
 		}
-	case key.Matches(msg, m.keys.Focus):
-		m.focusOnly = !m.focusOnly
-		m.selectedSlice = clamp(m.selectedSlice, 0, max(0, len(m.reviewItems())-1))
-		m.selectedHunk = 0
-		m.resetScrolls()
-		if m.focusOnly {
-			m.status = "Focus mode: quiet changes collapsed."
-		} else {
-			m.status = "Showing all changes."
-		}
 	case key.Matches(msg, m.keys.Regen):
 		if !m.opts.NoAI && m.pr != nil {
 			runner := m.selectedRunner()

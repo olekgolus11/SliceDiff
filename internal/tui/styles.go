@@ -184,7 +184,6 @@ func defaultKeyMap() keyMap {
 		Home:     key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "top")),
 		End:      key.NewBinding(key.WithKeys("end"), key.WithHelp("end", "bottom")),
 		View:     key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "toggle view")),
-		Focus:    key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "focus/all")),
 		Regen:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "regenerate")),
 		Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more help")),
 		Enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "drill in")),

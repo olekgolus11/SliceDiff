@@ -80,7 +80,7 @@ func BuildPrompt(runner RunnerName, pr github.PullRequest) ([]byte, error) {
 			"Hunks include signal metadata. Prioritize signal=focus hunks for semantic slices.",
 			"Keep signal=quiet hunks terse. Formatting, import, and whitespace churn should not compete with behavior changes.",
 			"Treat signal=audit hunks as recoverable verification work for generated, vendor, and lockfile changes.",
-			"Use the schema_version slicediff.slice.v2.",
+			"Use the schema_version slicediff.slice.v3.",
 		},
 		"required_output_shape": map[string]any{
 			"schema_version":   SchemaVersion,
@@ -112,7 +112,7 @@ func runCodex(ctx context.Context, opts Options, prompt []byte) ([]byte, error) 
 	}
 	defer outputCleanup()
 
-	args := []string{"exec", "--skip-git-repo-check", "--ephemeral", "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "-"}
+	args := codexExecArgs(schemaPath, outputPath)
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Dir = opts.WorkDir
 	cmd.Stdin = bytes.NewReader(prompt)
@@ -125,6 +125,10 @@ func runCodex(ctx context.Context, opts Options, prompt []byte) ([]byte, error) 
 		return out, nil
 	}
 	return stdout, nil
+}
+
+func codexExecArgs(schemaPath, outputPath string) []string {
+	return []string{"exec", "--model", "gpt-5.4-mini", "--skip-git-repo-check", "--ephemeral", "--color", "never", "--output-schema", schemaPath, "--output-last-message", outputPath, "-"}
 }
 
 func runOpenCode(ctx context.Context, opts Options, prompt []byte) ([]byte, error) {
@@ -177,7 +181,7 @@ func writeSchemaFile() (string, func(), error) {
   "additionalProperties": false,
   "required": ["schema_version", "runner", "prompt_version", "pr_head_sha", "slices", "unassigned_hunks", "warnings"],
   "properties": {
-    "schema_version": {"type": "string", "const": "slicediff.slice.v2"},
+    "schema_version": {"type": "string", "const": "slicediff.slice.v3"},
     "runner": {"type": "string"},
     "prompt_version": {"type": "string"},
     "pr_head_sha": {"type": "string"},
@@ -205,13 +209,12 @@ func writeSchemaFile() (string, func(), error) {
     "slice": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "summary", "category", "confidence", "rationale", "hunk_refs", "reading_steps"],
+      "required": ["id", "title", "summary", "category", "rationale", "hunk_refs", "reading_steps"],
       "properties": {
         "id": {"type": "string"},
         "title": {"type": "string"},
         "summary": {"type": "string"},
         "category": {"type": "string"},
-        "confidence": {"type": "string"},
         "rationale": {"type": "string"},
         "hunk_refs": {"type": "array", "items": {"$ref": "#/$defs/hunk_ref"}},
         "reading_steps": {"type": "array", "items": {"$ref": "#/$defs/reading_step"}}
