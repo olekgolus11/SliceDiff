@@ -44,6 +44,10 @@ type styles struct {
 	diffDeleted  lipgloss.Style
 	diffContext  lipgloss.Style
 	diffSelected lipgloss.Style
+	detailText   lipgloss.Style
+	detailMeta   lipgloss.Style
+	detailRail   lipgloss.Style
+	detailHunk   lipgloss.Style
 }
 
 func defaultStyles() styles {
@@ -152,6 +156,16 @@ func defaultStyles() styles {
 		diffContext: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#AAB8C8")),
 		diffSelected: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ink).
+			Background(cyan),
+		detailText: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F4F8FC")),
+		detailMeta: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B8C7D8")),
+		detailRail: lipgloss.NewStyle().
+			Background(cyan),
+		detailHunk: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ink).
 			Background(cyan),

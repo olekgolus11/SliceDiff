@@ -47,6 +47,13 @@ This repository contains **SliceDiff**, a Go Bubbletea terminal app for reviewin
 
 ## Testing And Verification
 
+Go may not be on `PATH` in this workspace. If `go` or `gofmt` are not found, use the Homebrew binaries directly or prepend them for the command:
+
+```sh
+PATH=/opt/homebrew/bin:$PATH go test ./...
+/opt/homebrew/bin/gofmt -w internal/tui/view.go
+```
+
 Run the full test suite before handing off changes:
 
 ```sh

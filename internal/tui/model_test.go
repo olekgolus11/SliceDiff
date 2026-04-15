@@ -442,6 +442,31 @@ func TestGroupedDetailsReadingStepsRenderNarrativeAndElideLongFilePaths(t *testi
 	}
 }
 
+func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.selectedHunk = 0
+
+	lines, _ := m.centerScrollStyledLines(58)
+	rendered := strings.Join(lines, "\n")
+	selectedStyle := m.style.diffSelected.Render("First hunk explains the state change.")
+	if strings.Contains(rendered, selectedStyle) {
+		t.Fatalf("expected selected reading step prose to avoid full selection background, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, m.style.detailHunk.Render("h1")) {
+		t.Fatalf("expected selected hunk badge in details, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, m.style.detailRail.Render(" ")) {
+		t.Fatalf("expected selected rail marker in details, got:\n%s", rendered)
+	}
+	if lipgloss.Width(m.readingStepRefPrefix(true)) != lipgloss.Width(m.readingStepRefPrefix(false)) {
+		t.Fatal("expected selected and unselected hunk references to share the same column")
+	}
+	if lipgloss.Width(m.style.detailHunk.Render("h1")) != lipgloss.Width("h1") {
+		t.Fatal("expected selected hunk badge to keep the hunk id width stable")
+	}
+}
+
 func TestGroupedReadingStepSelectionDrivesRightDiff(t *testing.T) {
 	m := testModel()
 	m.mode = modeGrouped

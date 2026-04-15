@@ -568,7 +568,7 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 			"",
 			m.style.section.Render("Summary"),
 		)
-		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.diffContext)...)
+		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.detailText)...)
 		return lines
 	}
 
@@ -599,17 +599,12 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 		lines := []string{m.style.section.Render("Reading order")}
 		selectedLine := -1
 		for i, step := range item.ReadingSteps {
-			bodyStyle := m.style.diffContext
-			pathStyle := m.style.subtle
-			if i == m.selectedHunk {
-				bodyStyle = m.style.diffSelected
-				pathStyle = m.style.diffSelected
+			selected := i == m.selectedHunk
+			if selected {
 				selectedLine = len(lines)
 			}
-			lines = append(lines, styledWrap(step.Body, max(24, width), bodyStyle)...)
-			stem := "  > " + step.HunkRef.HunkID + "  "
-			path := shortenPathAfterFirstSlash(step.HunkRef.FilePath, max(1, width-ansi.StringWidth(stem)))
-			lines = append(lines, pathStyle.Render(stem+path), "")
+			lines = append(lines, m.renderReadingStepBody(step.Body, width, selected)...)
+			lines = append(lines, m.renderReadingStepRef(step.HunkRef, width, selected), "")
 		}
 		return lines, selectedLine
 	}
@@ -638,6 +633,41 @@ func (m Model) centerScrollStyledLines(width int) ([]string, int) {
 		lines = append(lines, line)
 	}
 	return lines, selectedLine
+}
+
+func (m Model) renderReadingStepBody(body string, width int, selected bool) []string {
+	prefix := m.readingStepPrefix(selected)
+	lines := wrapWords(body, max(1, width-lipgloss.Width(prefix)))
+	for i, line := range lines {
+		lines[i] = prefix + m.style.detailText.Render(line)
+	}
+	return lines
+}
+
+func (m Model) renderReadingStepRef(ref agent.HunkRef, width int, selected bool) string {
+	prefix := m.readingStepRefPrefix(selected)
+	hunk := ref.HunkID
+	separator := "  "
+	if selected {
+		hunk = m.style.detailHunk.Render(ref.HunkID)
+	}
+	stemWidth := lipgloss.Width(prefix) + lipgloss.Width(hunk) + ansi.StringWidth(separator)
+	path := shortenPathAfterFirstSlash(ref.FilePath, max(1, width-stemWidth))
+	return prefix + hunk + separator + m.style.detailMeta.Render(path)
+}
+
+func (m Model) readingStepPrefix(selected bool) string {
+	if selected {
+		return m.style.detailRail.Render(" ") + " "
+	}
+	return "  "
+}
+
+func (m Model) readingStepRefPrefix(selected bool) string {
+	if selected {
+		return m.style.detailRail.Render(" ") + "   "
+	}
+	return "    "
 }
 
 func (m Model) centerStyledLines() ([]string, int) {
