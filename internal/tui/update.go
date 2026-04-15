@@ -29,6 +29,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.synced(spinnerCmd)
 		}
 		m.pr = msg.pr
+		m.diffLineCache = make(map[string]string)
 		m.clearError()
 		m.status = "PR loaded."
 		next, cmd := m.maybeStartAI()
@@ -685,6 +686,7 @@ func (m *Model) scrollPanelByMouse(target panel, delta int) bool {
 		m.moveSelection(delta)
 		return true
 	case panelRight:
+		delta *= 2
 		if delta > 0 {
 			m.rightViewport.ScrollDown(delta)
 		} else {

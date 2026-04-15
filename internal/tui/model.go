@@ -48,6 +48,7 @@ type Model struct {
 	help           help.Model
 	spinner        spinner.Model
 	keys           keyMap
+	diffLineCache  map[string]string
 
 	status string
 	errMsg string
@@ -84,6 +85,7 @@ func New(opts Options) Model {
 		help:           newHelp(style),
 		spinner:        newSpinner(style),
 		keys:           defaultKeyMap(),
+		diffLineCache:  make(map[string]string),
 		pickerBusy:     !opts.HasTarget,
 		style:          style,
 	}

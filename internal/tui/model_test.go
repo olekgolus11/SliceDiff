@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/olekgolus11/SliceDiff/internal/agent"
 	"github.com/olekgolus11/SliceDiff/internal/config"
 	"github.com/olekgolus11/SliceDiff/internal/diff"
@@ -309,11 +310,78 @@ func TestStyledDiffLinesUseSemanticColors(t *testing.T) {
 	if !strings.Contains(diffView, "\x1b[") {
 		t.Fatalf("expected ANSI styling in diff view, got:\n%s", diffView)
 	}
-	if !strings.Contains(diffView, "+ a") {
+	plain := ansi.Strip(diffView)
+	if !strings.Contains(plain, "+ a") {
 		t.Fatalf("expected added line marker, got:\n%s", diffView)
 	}
-	if !strings.Contains(diffView, "- old") {
+	if !strings.Contains(plain, "- old") {
 		t.Fatalf("expected deleted line marker, got:\n%s", diffView)
+	}
+}
+
+func TestStyledDiffLinesUseLanguageColor(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineAdded,
+		NewNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "\x1b[38;2;") {
+		t.Fatalf("expected truecolor syntax highlighting in diff view, got:\n%s", rendered)
+	}
+	if plain := ansi.Strip(rendered); !strings.Contains(plain, "+ func main() { return }") {
+		t.Fatalf("expected highlighted diff to preserve plain text, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "48;2;12;42;27") {
+		t.Fatalf("expected highlighted added line to keep green background, got:\n%s", rendered)
+	}
+}
+
+func TestStyledDiffLinesKeepDeletedBackgroundWithLanguageColor(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineDeleted,
+		OldNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "\x1b[38;2;") {
+		t.Fatalf("expected truecolor syntax highlighting in diff view, got:\n%s", rendered)
+	}
+	if plain := ansi.Strip(rendered); !strings.Contains(plain, "- func main() { return }") {
+		t.Fatalf("expected highlighted diff to preserve plain text, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "48;2;42;16;23") {
+		t.Fatalf("expected highlighted deleted line to keep red background, got:\n%s", rendered)
+	}
+}
+
+func TestStyledDiffLinesCacheRenderedDiffLines(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.diffLineCache = make(map[string]string)
+	m.pr.Files[0].Hunks[0].Lines = []diff.DiffLine{{
+		Type:      diff.LineAdded,
+		NewNumber: 1,
+		Content:   "func main() { return }",
+	}}
+
+	_ = m.rightStyledLines()
+	if len(m.diffLineCache) != 1 {
+		t.Fatalf("expected one cached diff line, got %d", len(m.diffLineCache))
+	}
+	for key := range m.diffLineCache {
+		m.diffLineCache[key] = "cached line"
+	}
+
+	rendered := strings.Join(m.rightStyledLines(), "\n")
+	if !strings.Contains(rendered, "cached line") {
+		t.Fatalf("expected cached rendered diff line, got:\n%s", rendered)
 	}
 }
 
@@ -601,8 +669,8 @@ func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
 	if got.selectedHunk != 1 {
 		t.Fatalf("expected selected hunk unchanged, got %d", got.selectedHunk)
 	}
-	if got.rightViewport.YOffset() == 0 {
-		t.Fatal("expected j to scroll diff viewport down")
+	if got.rightViewport.YOffset() != 1 {
+		t.Fatalf("expected j to scroll diff viewport down by 1 line, got %d", got.rightViewport.YOffset())
 	}
 
 	got, _ = got.handleReadyKey(keyPress("k"))
@@ -611,8 +679,8 @@ func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
 	}
 
 	got, _ = got.handleReadyKey(keyPress("down"))
-	if got.rightViewport.YOffset() == 0 {
-		t.Fatal("expected down arrow to scroll diff viewport down")
+	if got.rightViewport.YOffset() != 1 {
+		t.Fatalf("expected down arrow to scroll diff viewport down by 1 line, got %d", got.rightViewport.YOffset())
 	}
 }
 
@@ -661,7 +729,7 @@ func TestCenterPanelLineKeysStillMoveSelectedHunk(t *testing.T) {
 	}
 }
 
-func TestMouseWheelScrollsDiffByTwoLinesPerTerminalNotch(t *testing.T) {
+func TestMouseWheelScrollsDiffByTwoLinesPerDampenedStep(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
 	m.focus = panelLeft
@@ -678,8 +746,8 @@ func TestMouseWheelScrollsDiffByTwoLinesPerTerminalNotch(t *testing.T) {
 	if m.focus != panelRight {
 		t.Fatalf("expected wheel over diff to focus right panel, got %v", m.focus)
 	}
-	if got := m.rightViewport.YOffset(); got != 2 {
-		t.Fatalf("expected wheel down to scroll diff by 2 lines per terminal notch, got %d", got)
+	if got := m.rightViewport.YOffset(); got != 4 {
+		t.Fatalf("expected wheel down to scroll diff by 2 lines per dampened step, got %d", got)
 	}
 	if m.selectedHunk != 1 {
 		t.Fatalf("expected selected hunk unchanged, got %d", m.selectedHunk)

@@ -742,7 +742,7 @@ func (m Model) rightLines() []string {
 	return lines
 }
 
-func (m Model) rightStyledLines() []string {
+func (m *Model) rightStyledLines() []string {
 	hunk := m.selectedDiffHunk()
 	if hunk == nil {
 		if file := m.currentFile(); file != nil && file.IsBinary {
@@ -767,12 +767,17 @@ func (m Model) rightStyledLines() []string {
 	}
 	lines = append(lines, "")
 	for _, line := range hunk.Lines {
-		lines = append(lines, m.renderDiffLine(line))
+		lines = append(lines, m.renderDiffLine(hunk.FilePath, line))
 	}
 	return lines
 }
 
-func (m Model) renderDiffLine(line diff.DiffLine) string {
+func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
+	cacheKey := diffLineCacheKey(filePath, line)
+	if cached, ok := m.diffLineCache[cacheKey]; ok {
+		return cached
+	}
+
 	oldNo := formatLineNumber(line.OldNumber)
 	newNo := formatLineNumber(line.NewNumber)
 	sign := " "
@@ -786,8 +791,21 @@ func (m Model) renderDiffLine(line diff.DiffLine) string {
 		style = m.style.diffDeleted
 	}
 	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
-	body := style.Render(fmt.Sprintf("%s %s", sign, line.Content))
-	return gutter + body
+	code, ok := highlightDiffCode(filePath, line.Content, style)
+	if !ok {
+		code = style.Render(line.Content)
+	}
+	body := style.Render(sign+" ") + code
+	rendered := gutter + body
+	if m.diffLineCache == nil {
+		m.diffLineCache = make(map[string]string)
+	}
+	m.diffLineCache[cacheKey] = rendered
+	return rendered
+}
+
+func diffLineCacheKey(filePath string, line diff.DiffLine) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, line.Content)
 }
 
 func (m Model) selectedDiffHunk() *diff.DiffHunk {
