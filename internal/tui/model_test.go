@@ -669,8 +669,8 @@ func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
 	if got.selectedHunk != 1 {
 		t.Fatalf("expected selected hunk unchanged, got %d", got.selectedHunk)
 	}
-	if got.rightViewport.YOffset() == 0 {
-		t.Fatal("expected j to scroll diff viewport down")
+	if got.rightViewport.YOffset() != 1 {
+		t.Fatalf("expected j to scroll diff viewport down by 1 line, got %d", got.rightViewport.YOffset())
 	}
 
 	got, _ = got.handleReadyKey(keyPress("k"))
@@ -679,8 +679,8 @@ func TestRightPanelLineKeysScrollDiffWithoutChangingSelectedHunk(t *testing.T) {
 	}
 
 	got, _ = got.handleReadyKey(keyPress("down"))
-	if got.rightViewport.YOffset() == 0 {
-		t.Fatal("expected down arrow to scroll diff viewport down")
+	if got.rightViewport.YOffset() != 1 {
+		t.Fatalf("expected down arrow to scroll diff viewport down by 1 line, got %d", got.rightViewport.YOffset())
 	}
 }
 
@@ -729,7 +729,7 @@ func TestCenterPanelLineKeysStillMoveSelectedHunk(t *testing.T) {
 	}
 }
 
-func TestMouseWheelScrollsDiffByTwoLinesPerTerminalNotch(t *testing.T) {
+func TestMouseWheelScrollsDiffByTwoLinesPerDampenedStep(t *testing.T) {
 	m := testModel()
 	m.stage = stageReady
 	m.focus = panelLeft
@@ -746,8 +746,8 @@ func TestMouseWheelScrollsDiffByTwoLinesPerTerminalNotch(t *testing.T) {
 	if m.focus != panelRight {
 		t.Fatalf("expected wheel over diff to focus right panel, got %v", m.focus)
 	}
-	if got := m.rightViewport.YOffset(); got != 2 {
-		t.Fatalf("expected wheel down to scroll diff by 2 lines per terminal notch, got %d", got)
+	if got := m.rightViewport.YOffset(); got != 4 {
+		t.Fatalf("expected wheel down to scroll diff by 2 lines per dampened step, got %d", got)
 	}
 	if m.selectedHunk != 1 {
 		t.Fatalf("expected selected hunk unchanged, got %d", m.selectedHunk)

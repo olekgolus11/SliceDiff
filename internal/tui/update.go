@@ -686,6 +686,7 @@ func (m *Model) scrollPanelByMouse(target panel, delta int) bool {
 		m.moveSelection(delta)
 		return true
 	case panelRight:
+		delta *= 2
 		if delta > 0 {
 			m.rightViewport.ScrollDown(delta)
 		} else {
