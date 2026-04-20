@@ -41,6 +41,11 @@ This repository contains **SliceDiff**, a Go Bubbletea terminal app for reviewin
 - Use the Bubbletea skill/workflow when working on app behavior, TUI state, layout, input handling, or rendering.
 - If making UI or visual changes, use the Frontend Design skill so the result stays intentional and polished.
 - Keep the TUI keyboard-first and responsive to terminal resizing.
+- To avoid Bubble Tea v2 trailing/background rendering bugs, every visible TUI row that needs a background must be emitted at its final width with styled cells, not left for parent backgrounds or terminal defaults to fill.
+- Use the existing `padStyledLine`/`fillBlock` helpers and area-specific background styles in `internal/tui` when rendering panels, headers, footers, viewports, list rows, reading-order rows, and diff lines.
+- Use the existing NBSP fill-cell workaround for blank/trailing cells; do not reintroduce raw ASCII-space padding for visual fills, because Bubble Tea/Ultraviolet may optimize those spaces into erase operations that expose the terminal background.
+- Text-bearing cells inside panels must use panel-backed styles, and diff code cells must use their semantic added/deleted/context backgrounds. Do not rely on a parent Lip Gloss `.Background(...)` to paint through nested styled strings or ANSI resets.
+- When changing TUI rendering, add or update width/background regression tests that check exact visual width and expected background escape sequences for the affected rows.
 - When editing diff or agent logic, update tests alongside the code.
 - Use ASCII by default unless the file already depends on non-ASCII text.
 - Do not overwrite unrelated uncommitted changes in the worktree.

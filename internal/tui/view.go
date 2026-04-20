@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,7 @@ func (m Model) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
 	view.WindowTitle = "SliceDiff"
+	view.BackgroundColor = color.RGBA{R: 0x07, G: 0x0B, B: 0x12, A: 0xFF}
 	return view
 }
 
@@ -46,7 +48,7 @@ func (m Model) renderMain() string {
 	contentHeight := max(1, m.height-lipgloss.Height(header)-1)
 	body := m.renderPanels(m.width, contentHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+	return m.style.app.Render(fillBlock(screen, m.height, m.width, m.style.appFill))
 }
 
 func (m Model) renderWelcome() string {
@@ -54,7 +56,7 @@ func (m Model) renderWelcome() string {
 	bodyHeight := max(1, m.height-lipgloss.Height(footer))
 	body := m.renderWelcomeBody(m.width, bodyHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, body, footer)
-	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+	return m.style.app.Render(fillBlock(screen, m.height, m.width, m.style.appFill))
 }
 
 const welcomeSliceArt = `
@@ -106,11 +108,11 @@ func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 		lines = append(lines, "")
 	}
 	lines = append(lines,
-		m.style.headerTitle.Render("SliceDiff"),
-		m.style.diffContext.Render("Choose a pull request"),
+		m.style.panelSection.Render("SliceDiff"),
+		m.style.diffContextP.Render("Choose a pull request"),
 		lipgloss.JoinHorizontal(lipgloss.Center,
 			requested,
-			" ",
+			m.style.panelFill.Render(fillCell),
 			manual,
 		),
 		m.renderWelcomeStatus(width),
@@ -119,15 +121,18 @@ func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 		if lipgloss.Width(line) > width && !strings.Contains(line, "\x1b[") {
 			line = ansi.Truncate(line, width, "...")
 		}
-		lines[i] = fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
+		if i < len(lines)-4 {
+			line = m.style.panelFill.Render(line)
+		}
+		lines[i] = centerStyledLine(line, width, m.style.panelFill)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
-	rows := []string{fillLine("", width)}
+	rows := []string{padStyledLine("", width, m.style.panelFill)}
 	if m.welcomeSection != welcomeManual || m.manualStep != manualRepos {
-		return append(rows, fillLine("", width), fillLine("", width))
+		return append(rows, padStyledLine("", width, m.style.panelFill), padStyledLine("", width, m.style.panelFill))
 	}
 	prompt := "/ " + m.manualQuery
 	if m.manualQuery == "" {
@@ -135,19 +140,19 @@ func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
 	}
 	searchWidth := max(1, pickerWidth-4)
 	search := m.style.callout.Width(pickerWidth).Render(fitPlainLine(ansi.Truncate(prompt, searchWidth, "..."), searchWidth))
-	return append(rows, centerWelcomeLine(search, width), fillLine("", width))
+	return append(rows, m.centerWelcomeLine(search, width), padStyledLine("", width, m.style.panelFill))
 }
 
 func (m Model) renderWelcomeStatus(width int) string {
 	count := m.welcomeCountLabel()
 	countWidth := lipgloss.Width(count)
-	separator := "  /  "
+	separator := strings.Repeat(fillCell, 2) + "/" + strings.Repeat(fillCell, 2)
 	subtitleWidth := max(1, width-countWidth-ansi.StringWidth(separator))
 	subtitle := ansi.Truncate(m.welcomeSubtitle(), subtitleWidth, "...")
 	line := lipgloss.JoinHorizontal(lipgloss.Center,
-		m.style.panelTitle.Render(count),
-		m.style.subtle.Render(separator),
-		m.style.subtle.Render(subtitle),
+		m.style.panelSection.Render(count),
+		m.style.panelSubtitle.Render(separator),
+		m.style.panelSubtitle.Render(subtitle),
 	)
 	return line
 }
@@ -244,36 +249,36 @@ func (m Model) renderWelcomeBody(width, height int) string {
 	cluster := m.renderWelcomeCluster(bodyWidth, maxLogoHeight)
 	lines = append(lines, cluster, "")
 	lines = append(lines, m.renderWelcomeSearchRows(bodyWidth, pickerWidth)...)
-	lines = fillWelcomeLines(lines, bodyWidth)
+	lines = m.fillWelcomeLines(lines, bodyWidth)
 	availableHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
 	listHeight := welcomePickerListHeight(availableHeight)
 	if m.pickerBusy {
-		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading...")
-		loading = lipgloss.PlaceHorizontal(pickerWidth, lipgloss.Center, loading)
-		lines = append(lines, centerWelcomeBlock(fitLines(loading, listHeight, pickerWidth), bodyWidth)...)
+		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), m.style.panelFill.Render(fillCell), m.style.diffContextP.Render("Loading..."))
+		loading = centerStyledLine(loading, pickerWidth, m.style.panelFill)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(loading, listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	} else if m.pickerErr != "" {
 		errBlock := strings.Join([]string{
-			m.style.errorText.Render("Could not load choices."),
-			m.style.diffContext.Render(ansi.Truncate(m.pickerErr, pickerWidth, "...")),
+			m.style.errorTextP.Render("Could not load choices."),
+			m.style.diffContextP.Render(ansi.Truncate(m.pickerErr, pickerWidth, "...")),
 		}, "\n")
-		lines = append(lines, centerWelcomeBlock(fitLines(errBlock, listHeight, pickerWidth), bodyWidth)...)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(errBlock, listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	} else {
 		m.syncPickerList()
 		pickerList := m.pickerList
 		pickerList.SetSize(pickerWidth, listHeight)
 		pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
-		lines = append(lines, centerWelcomeBlock(fitLines(pickerList.View(), listHeight, pickerWidth), bodyWidth)...)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(pickerList.View(), listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	}
 	contentHeight := lipgloss.Height(strings.Join(lines, "\n"))
 	topPad := max(0, (bodyHeight-contentHeight)/2)
 	if topPad > 0 {
 		padded := make([]string, 0, len(lines)+topPad)
 		for i := 0; i < topPad; i++ {
-			padded = append(padded, fillLine("", bodyWidth))
+			padded = append(padded, padStyledLine("", bodyWidth, m.style.panelFill))
 		}
 		lines = append(padded, lines...)
 	}
-	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
+	body := fillBlock(strings.Join(lines, "\n"), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(m.welcomePanelTitle(), body, width, innerHeight, true)
 }
 
@@ -285,10 +290,10 @@ func (m Model) renderPickerFooter() string {
 	statusText := m.style.status.Render(truncate(m.status, max(1, m.width/3)))
 	line := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusText,
-		m.style.subtle.Render(" | "),
-		m.style.subtle.Render(truncate(help, max(1, m.width-lipgloss.Width(statusText)-3))),
+		m.style.footerSubtle.Render(" | "),
+		m.style.footerSubtle.Render(truncate(help, max(1, m.width-lipgloss.Width(statusText)-3))),
 	)
-	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
+	return m.style.footer.Render(fillBlock(line, 1, m.width, m.style.footerFill))
 }
 
 func (m Model) welcomePanelTitle() string {
@@ -337,19 +342,19 @@ func (m Model) renderHeader() string {
 	counts := m.headerCounts()
 	line1 := lipgloss.JoinHorizontal(lipgloss.Center,
 		m.style.headerTitle.Render("SliceDiff"),
-		"  ",
+		m.style.headerFill.Render(strings.Repeat(fillCell, 2)),
 		m.style.emphasis.Render(truncate(name, max(10, m.width/3))),
-		"  ",
+		m.style.headerFill.Render(strings.Repeat(fillCell, 2)),
 		m.style.chipHot.Render(mode),
-		" ",
+		m.style.headerFill.Render(fillCell),
 		m.style.chipCool.Render("runner "+m.runnerLabel()),
-		" ",
+		m.style.headerFill.Render(fillCell),
 		m.style.chip.Render(counts),
 	)
 	line1 = ansi.Truncate(line1, m.width, "...")
 	line2 := m.style.headerMeta.Render(truncate(meta, max(1, m.width-2)))
 	line2 = ansi.Truncate(line2, m.width, "...")
-	return m.style.header.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
+	return m.style.header.Render(fillBlock(lipgloss.JoinVertical(lipgloss.Left, line1, line2), 2, m.width, m.style.headerFill))
 }
 
 func (m Model) headerCounts() string {
@@ -387,10 +392,10 @@ func (m Model) renderFooter() string {
 	helpText = firstLine(helpText)
 	line := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusText,
-		m.style.subtle.Render(" | "),
+		m.style.footerSubtle.Render(" | "),
 		helpText,
 	)
-	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
+	return m.style.footer.Render(fillBlock(line, 1, m.width, m.style.footerFill))
 }
 
 func (m Model) renderPanels(width, height int) string {
@@ -422,7 +427,7 @@ func (m Model) renderListPanel(title string, width, innerHeight int, focused boo
 	listModel := m.leftList
 	listModel.SetSize(bodyWidth, bodyHeight)
 	listModel.Select(m.currentLeftIndex())
-	body := fitLines(listModel.View(), bodyHeight, bodyWidth)
+	body := fillBlock(listModel.View(), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(title, body, width, innerHeight, focused)
 }
 
@@ -435,14 +440,14 @@ func (m Model) renderViewportPanel(title string, p panel, width, innerHeight int
 	}
 	viewportModel.SetWidth(bodyWidth)
 	viewportModel.SetHeight(bodyHeight)
-	body := fitLines(viewportModel.View(), bodyHeight, bodyWidth)
+	body := fillBlock(viewportModel.View(), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(title, body, width, innerHeight, focused)
 }
 
 func (m Model) renderCenterPanel(title string, width, innerHeight int, focused bool) string {
 	bodyHeight := max(0, innerHeight-1)
 	bodyWidth := max(1, width-2)
-	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), m.centerOverviewHeight(bodyHeight), bodyWidth)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), m.centerOverviewHeight(bodyHeight), bodyWidth, m.style.panelFill)
 	overviewHeight := lipgloss.Height(overview)
 	remainingHeight := max(0, bodyHeight-overviewHeight)
 
@@ -454,12 +459,12 @@ func (m Model) renderCenterPanel(title string, width, innerHeight int, focused b
 	if selectedStart >= 0 {
 		ensureViewportRangeVisible(&viewportModel, selectedStart, selectedEnd)
 	}
-	scrolling := fitLines(viewportModel.View(), remainingHeight, bodyWidth)
+	scrolling := fillBlock(viewportModel.View(), remainingHeight, bodyWidth, m.style.panelFill)
 	body := overview
 	if remainingHeight > 0 {
 		body = lipgloss.JoinVertical(lipgloss.Left, overview, scrolling)
 	}
-	return m.renderPanel(title, fitLines(body, bodyHeight, bodyWidth), width, innerHeight, focused)
+	return m.renderPanel(title, fillBlock(body, bodyHeight, bodyWidth, m.style.panelFill), width, innerHeight, focused)
 }
 
 func (m Model) centerOverviewHeight(bodyHeight int) int {
@@ -472,10 +477,10 @@ func (m Model) centerOverviewHeight(bodyHeight int) int {
 func (m Model) renderPanel(title, body string, width, innerHeight int, focused bool) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(0, innerHeight)
-	content := fitLines(body, contentHeight, contentWidth)
+	content := fillBlock(body, contentHeight, contentWidth, m.style.panelFill)
 	if title != "" {
-		titleLine := m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "..."))
-		content = lipgloss.JoinVertical(lipgloss.Left, titleLine, fitLines(body, max(0, innerHeight-1), contentWidth))
+		titleLine := padStyledLine(m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "...")), contentWidth, m.style.panelFill)
+		content = lipgloss.JoinVertical(lipgloss.Left, titleLine, fillBlock(body, max(0, innerHeight-1), contentWidth, m.style.panelFill))
 	}
 	return panelStyle(m.style, focused, width).Render(content)
 }
@@ -697,12 +702,12 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 			return append(prefix, m.callout("No selected slice."))
 		}
 		lines := append(prefix,
-			m.style.emphasis.Render(item.Title),
+			m.style.panelEmphasis.Render(item.Title),
 			m.renderBadges(item.Category),
 			"",
-			m.style.section.Render("Summary"),
+			m.style.panelSection.Render("Summary"),
 		)
-		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.detailText)...)
+		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.detailTextP)...)
 		return lines
 	}
 
@@ -712,14 +717,14 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 	}
 	if file.IsBinary {
 		return append(prefix,
-			m.style.emphasis.Render(file.Path),
+			m.style.panelEmphasis.Render(file.Path),
 			m.renderBadges(file.Status, "binary"),
 			"",
 			m.callout("Binary files do not include line hunks in the unified diff."),
 		)
 	}
 	return append(prefix,
-		m.style.emphasis.Render(file.Path),
+		m.style.panelEmphasis.Render(file.Path),
 		m.renderBadges(file.Status, generatedLabel(file)),
 	)
 }
@@ -735,7 +740,7 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 		if item == nil {
 			return []string{m.callout("No selected slice.")}, -1, -1
 		}
-		lines := []string{"", m.style.section.Render("Reading order")}
+		lines := []string{"", padStyledLine(m.style.panelSection.Render("Reading order"), width, m.style.panelFill)}
 		selectedStart := -1
 		selectedEnd := -1
 		for i, step := range item.ReadingSteps {
@@ -758,25 +763,26 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 	if file.IsBinary {
 		return []string{m.callout("Binary files do not include line hunks in the unified diff.")}, -1, -1
 	}
-	lines := []string{m.style.section.Render("Hunks")}
+	lines := []string{padStyledLine(m.style.panelSection.Render("Hunks"), width, m.style.panelFill)}
 	if len(file.Hunks) == 0 {
 		lines = append(lines, m.callout("No text hunks available for this file."))
 		return lines, -1, -1
 	}
 	selectedLine := -1
 	for i, hunk := range file.Hunks {
-		line := fmt.Sprintf("  %s  %s", hunk.ID, hunk.Header)
+		line := fmt.Sprintf("  %s%s%s%s", hunk.ID, fillCell, hunk.Header, fillCell)
 		if hunkSignal(hunk) != diff.HunkSignalFocus {
-			line += "  " + string(hunkSignal(hunk)) + ":" + hunkQuietReason(hunk)
+			line += strings.Repeat(fillCell, 2) + string(hunkSignal(hunk)) + ":" + hunkQuietReason(hunk)
 		}
 		if i == m.selectedHunk {
-			line = m.style.diffSelected.Render("> " + hunk.ID + "  " + hunk.Header)
+			line = m.style.diffSelected.Render("> " + hunk.ID + fillCell + hunk.Header)
 			if hunkSignal(hunk) != diff.HunkSignalFocus {
-				line += " " + m.style.subtle.Render(string(hunkSignal(hunk))+":"+hunkQuietReason(hunk))
+				line += fillCell + m.style.diffSelected.Render(string(hunkSignal(hunk))+":"+hunkQuietReason(hunk))
 			}
+			line = padStyledLine(line, width, m.style.diffSelectedF)
 			selectedLine = len(lines)
 		} else {
-			line = m.style.diffContext.Render(line)
+			line = padStyledLine(m.style.diffContextP.Render(line), width, m.style.panelFill)
 		}
 		lines = append(lines, line)
 	}
@@ -787,35 +793,35 @@ func (m Model) renderReadingStepBody(body string, width int, selected bool) []st
 	prefix := m.readingStepPrefix(selected)
 	lines := wrapWords(body, max(1, width-lipgloss.Width(prefix)))
 	for i, line := range lines {
-		lines[i] = prefix + m.style.detailText.Render(line)
+		lines[i] = padStyledLine(prefix+m.style.detailTextP.Render(line), width, m.style.panelFill)
 	}
 	return lines
 }
 
 func (m Model) renderReadingStepRef(ref agent.HunkRef, width int, selected bool) string {
 	prefix := m.readingStepRefPrefix(selected)
-	hunk := ref.HunkID
-	separator := "  "
+	hunk := m.style.detailMetaP.Render(ref.HunkID)
+	separator := strings.Repeat(fillCell, 2)
 	if selected {
 		hunk = m.style.detailHunk.Render(ref.HunkID)
 	}
 	stemWidth := lipgloss.Width(prefix) + lipgloss.Width(hunk) + ansi.StringWidth(separator)
 	path := shortenPathAfterFirstSlash(ref.FilePath, max(1, width-stemWidth))
-	return prefix + hunk + separator + m.style.detailMeta.Render(path)
+	return padStyledLine(prefix+hunk+m.style.detailMetaP.Render(separator)+m.style.detailMetaP.Render(path), width, m.style.panelFill)
 }
 
 func (m Model) readingStepPrefix(selected bool) string {
 	if selected {
-		return m.style.detailRail.Render(" ") + " "
+		return m.style.detailRail.Render(fillCell) + m.style.panelFill.Render(fillCell)
 	}
-	return "  "
+	return m.style.panelFill.Render(strings.Repeat(fillCell, 2))
 }
 
 func (m Model) readingStepRefPrefix(selected bool) string {
 	if selected {
-		return m.style.detailRail.Render(" ") + "   "
+		return m.style.detailRail.Render(fillCell) + m.style.panelFill.Render(strings.Repeat(fillCell, 3))
 	}
-	return "    "
+	return m.style.panelFill.Render(strings.Repeat(fillCell, 4))
 }
 
 func (m Model) centerStyledLines() ([]string, int) {
@@ -849,15 +855,15 @@ func (m Model) errorStyledLines() []string {
 		return nil
 	}
 	lines := []string{
-		m.style.errorText.Render("Last error"),
+		m.style.errorTextP.Render("Last error"),
 		m.renderBadges(string(m.appErr.Kind), "recovery"),
-		m.style.diffContext.Render(m.appErr.Summary),
+		m.style.diffContextP.Render(m.appErr.Summary),
 		"",
-		m.style.section.Render("Recovery"),
+		m.style.panelSection.Render("Recovery"),
 	}
-	lines = append(lines, styledWrap(m.appErr.Recovery, 82, m.style.diffContext)...)
-	lines = append(lines, "", m.style.section.Render("Details"))
-	lines = append(lines, styledWrap(m.appErr.Detail, 82, m.style.subtle)...)
+	lines = append(lines, styledWrap(m.appErr.Recovery, 82, m.style.diffContextP)...)
+	lines = append(lines, "", m.style.panelSection.Render("Details"))
+	lines = append(lines, styledWrap(m.appErr.Detail, 82, m.style.detailMetaP)...)
 	lines = append(lines, "")
 	return lines
 }
@@ -885,37 +891,38 @@ func (m Model) rightLines() []string {
 }
 
 func (m *Model) rightStyledLines() []string {
+	width := max(1, m.rightViewport.Width())
 	hunk := m.selectedDiffHunk()
 	if hunk == nil {
 		if file := m.currentFile(); file != nil && file.IsBinary {
 			return []string{
-				m.style.emphasis.Render(file.Path),
-				"",
-				m.callout("Binary file. No text hunk preview is available."),
+				padStyledLine(m.style.panelEmphasis.Render(shortenPathAfterFirstSlash(file.Path, width)), width, m.style.panelFill),
+				padStyledLine("", width, m.style.panelFill),
+				padStyledLine(m.callout("Binary file. No text hunk preview is available."), width, m.style.panelFill),
 			}
 		}
 		return []string{
-			m.callout("No selected hunk."),
-			"",
-			m.style.subtle.Render("Use the left panel to select a file or slice with text hunks."),
+			padStyledLine(m.callout("No selected hunk."), width, m.style.panelFill),
+			padStyledLine("", width, m.style.panelFill),
+			padStyledLine(m.style.detailMetaP.Render("Use the left panel to select a file or slice with text hunks."), width, m.style.panelFill),
 		}
 	}
 	lines := []string{
-		m.style.emphasis.Render(hunk.FilePath),
-		m.style.diffHeader.Render(hunk.Header),
+		padStyledLine(m.style.panelEmphasis.Render(shortenPathAfterFirstSlash(hunk.FilePath, width)), width, m.style.panelFill),
+		padStyledLine(m.style.diffHeader.Render(ansi.Truncate(hunk.Header, width, "...")), width, m.style.diffHeader),
 	}
 	if hunkSignal(*hunk) != diff.HunkSignalFocus {
-		lines = append(lines, m.renderBadges(string(hunkSignal(*hunk)), hunkQuietReason(*hunk)))
+		lines = append(lines, padStyledLine(m.renderBadges(string(hunkSignal(*hunk)), hunkQuietReason(*hunk)), width, m.style.panelFill))
 	}
-	lines = append(lines, "")
+	lines = append(lines, padStyledLine("", width, m.style.panelFill))
 	for _, line := range hunk.Lines {
-		lines = append(lines, m.renderDiffLine(hunk.FilePath, line))
+		lines = append(lines, m.renderDiffLine(hunk.FilePath, line, width))
 	}
 	return lines
 }
 
-func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
-	cacheKey := diffLineCacheKey(filePath, line)
+func (m *Model) renderDiffLine(filePath string, line diff.DiffLine, width int) string {
+	cacheKey := diffLineCacheKey(filePath, line, width)
 	if cached, ok := m.diffLineCache[cacheKey]; ok {
 		return cached
 	}
@@ -923,21 +930,29 @@ func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 	oldNo := formatLineNumber(line.OldNumber)
 	newNo := formatLineNumber(line.NewNumber)
 	sign := " "
-	style := m.style.diffContext
+	style := m.style.diffContextP
+	fill := m.style.panelFill
 	switch line.Type {
 	case diff.LineAdded:
 		sign = "+"
 		style = m.style.diffAdded
+		fill = m.style.diffAdded
 	case diff.LineDeleted:
 		sign = "-"
 		style = m.style.diffDeleted
+		fill = m.style.diffDeleted
 	}
-	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
+	gutterText := fmt.Sprintf("%4s %4s ", oldNo, newNo)
+	gutter := m.style.diffGutterP.Render(gutterText)
 	code, ok := highlightDiffCode(filePath, line.Content, style)
 	if !ok {
 		code = style.Render(line.Content)
 	}
 	body := style.Render(sign+" ") + code
+	if width > 0 {
+		bodyWidth := max(0, width-lipgloss.Width(gutterText))
+		body = padStyledLine(body, bodyWidth, fill)
+	}
 	rendered := gutter + body
 	if m.diffLineCache == nil {
 		m.diffLineCache = make(map[string]string)
@@ -946,8 +961,8 @@ func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 	return rendered
 }
 
-func diffLineCacheKey(filePath string, line diff.DiffLine) string {
-	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, line.Content)
+func diffLineCacheKey(filePath string, line diff.DiffLine, width int) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, width, line.Content)
 }
 
 func (m Model) selectedDiffHunk() *diff.DiffHunk {
@@ -983,18 +998,19 @@ func (m Model) renderFrame(title string, lines []string) string {
 	width := max(40, m.width)
 	height := max(8, m.height)
 	body := []string{
-		m.style.headerTitle.Render(title),
+		m.style.panelSection.Render(title),
 		"",
 	}
 	if m.stage == stageLoading || m.aiBusy {
-		body[0] = lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", body[0])
+		body[0] = lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), m.style.panelFill.Render(fillCell), body[0])
 	}
 	for _, line := range lines {
-		body = append(body, m.style.diffContext.Render(line))
+		body = append(body, m.style.diffContextP.Render(line))
 	}
-	body = append(body, "", m.style.subtle.Render("q quits"))
-	panel := m.renderPanel("SliceDiff", fitLines(strings.Join(body, "\n"), min(height-4, 18), min(width-4, 92)), min(width, 96), min(height-2, 20), true)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel)
+	body = append(body, "", m.style.detailMetaP.Render("q quits"))
+	panelBody := fillBlock(strings.Join(body, "\n"), min(height-4, 18), min(width-4, 92), m.style.panelFill)
+	panel := m.renderPanel("SliceDiff", panelBody, min(width, 96), min(height-2, 20), true)
+	return placeStyledBlock(panel, height, width, m.style.appFill)
 }
 
 func (m Model) renderRunnerPicker() string {
@@ -1004,7 +1020,7 @@ func (m Model) renderRunnerPicker() string {
 		if i == m.selectedSetup {
 			lines = append(lines, m.style.diffSelected.Render("> "+option))
 		} else {
-			lines = append(lines, m.style.diffContext.Render("  "+option))
+			lines = append(lines, m.style.diffContextP.Render(strings.Repeat(fillCell, 2)+option))
 		}
 	}
 	lines = append(lines, "", "enter selects | q quits")
@@ -1213,43 +1229,115 @@ func shortenPathAfterFirstSlash(path string, width int) string {
 }
 
 func fitLines(content string, height, width int) string {
-	if height <= 0 {
+	return fillBlock(content, height, width, lipgloss.NewStyle())
+}
+
+func fillBlock(content string, height, width int, fill lipgloss.Style) string {
+	if height <= 0 || width <= 0 {
 		return ""
 	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	if len(lines) > height {
 		lines = lines[:height]
 	}
-	for i, line := range lines {
-		if width > 0 {
-			if lipgloss.Width(line) > width {
-				lines[i] = ansi.Truncate(line, width, "...")
-			}
-		}
+	out := make([]string, 0, height)
+	for _, line := range lines {
+		out = append(out, padStyledLine(line, width, fill))
 	}
-	for len(lines) < height {
-		lines = append(lines, "")
+	for len(out) < height {
+		out = append(out, padStyledLine("", width, fill))
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
 
-func fillWelcomeLines(lines []string, width int) []string {
+func padStyledLine(line string, width int, fill lipgloss.Style) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(line) > width {
+		line = ansi.Truncate(line, width, "...")
+	}
+	line = replaceTrailingSpaces(line, fill)
+	if gap := width - lipgloss.Width(line); gap > 0 {
+		line += fill.Render(strings.Repeat(fillCell, gap))
+	}
+	return line
+}
+
+func centerStyledLine(line string, width int, fill lipgloss.Style) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(line) > width {
+		line = ansi.Truncate(line, width, "...")
+	}
+	line = replaceTrailingSpaces(line, fill)
+	gap := width - lipgloss.Width(line)
+	if gap <= 0 {
+		return line
+	}
+	left := gap / 2
+	right := gap - left
+	return fill.Render(strings.Repeat(fillCell, left)) + line + fill.Render(strings.Repeat(fillCell, right))
+}
+
+func placeStyledBlock(content string, height, width int, fill lipgloss.Style) string {
+	if height <= 0 || width <= 0 {
+		return ""
+	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	topPad := max(0, (height-len(lines))/2)
+	out := make([]string, 0, height)
+	for len(out) < topPad {
+		out = append(out, padStyledLine("", width, fill))
+	}
+	for _, line := range lines {
+		out = append(out, centerStyledLine(line, width, fill))
+	}
+	for len(out) < height {
+		out = append(out, padStyledLine("", width, fill))
+	}
+	return strings.Join(out, "\n")
+}
+
+// fillCell is intentionally a non-breaking space. Bubble Tea v2's renderer can
+// optimize trailing ASCII spaces into erase operations, which leaves some
+// terminals showing the default background at the right edge.
+const fillCell = "\u00a0"
+
+func replaceTrailingSpaces(line string, fill lipgloss.Style) string {
+	gap := 0
+	for len(line) > gap && line[len(line)-1-gap] == ' ' {
+		gap++
+	}
+	if gap == 0 {
+		return line
+	}
+	return line[:len(line)-gap] + fill.Render(strings.Repeat(fillCell, gap))
+}
+
+func (m Model) fillWelcomeLines(lines []string, width int) []string {
 	for i, line := range lines {
-		lines[i] = fillLine(line, width)
+		lines[i] = padStyledLine(line, width, m.style.panelFill)
 	}
 	return lines
 }
 
-func centerWelcomeBlock(content string, width int) []string {
+func (m Model) centerWelcomeBlock(content string, width int) []string {
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		lines[i] = centerWelcomeLine(line, width)
+		lines[i] = m.centerWelcomeLine(line, width)
 	}
 	return lines
 }
 
-func centerWelcomeLine(line string, width int) string {
-	return fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
+func (m Model) centerWelcomeLine(line string, width int) string {
+	return centerStyledLine(line, width, m.style.panelFill)
 }
 
 func welcomePickerWidth(width int) int {
@@ -1276,8 +1364,9 @@ func fillLine(line string, width int) string {
 	if lipgloss.Width(line) > width {
 		line = ansi.Truncate(line, width, "...")
 	}
+	line = replaceTrailingSpacesPlain(line)
 	if gap := width - lipgloss.Width(line); gap > 0 {
-		line += strings.Repeat(" ", gap)
+		line += strings.Repeat(fillCell, gap)
 	}
 	return line
 }
@@ -1287,13 +1376,25 @@ func fitPlainLine(line string, width int) string {
 		return ""
 	}
 	line = ansi.Truncate(line, width, "...")
+	line = replaceTrailingSpacesPlain(line)
 	if gap := width - ansi.StringWidth(line); gap > 0 {
-		line += strings.Repeat(" ", gap)
+		line += strings.Repeat(fillCell, gap)
 	}
 	return line
 }
 
-func cropLines(content string, height, width int) string {
+func replaceTrailingSpacesPlain(line string) string {
+	gap := 0
+	for len(line) > gap && line[len(line)-1-gap] == ' ' {
+		gap++
+	}
+	if gap == 0 {
+		return line
+	}
+	return line[:len(line)-gap] + strings.Repeat(fillCell, gap)
+}
+
+func cropLines(content string, height, width int, fill lipgloss.Style) string {
 	if height <= 0 {
 		return ""
 	}
@@ -1307,6 +1408,7 @@ func cropLines(content string, height, width int) string {
 				lines[i] = ansi.Truncate(line, width, "...")
 			}
 		}
+		lines[i] = padStyledLine(lines[i], width, fill)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1319,7 +1421,7 @@ func (m Model) renderBadges(values ...string) string {
 		}
 		badges = append(badges, m.style.chip.Render(strings.ToUpper(value)))
 	}
-	return strings.Join(badges, " ")
+	return strings.Join(badges, m.style.panelFill.Render(fillCell))
 }
 
 func (m Model) callout(text string) string {

@@ -47,6 +47,145 @@ func TestHorizontalPanelWidthsPrioritizeDiff(t *testing.T) {
 	}
 }
 
+func TestPadStyledLineFillsTrailingCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	line := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("Hi")
+
+	got := padStyledLine(line, 6, fill)
+	plain := ansi.Strip(got)
+	if width := ansi.StringWidth(plain); width != 6 {
+		t.Fatalf("expected visual width 6, got %d: %q", width, got)
+	}
+	if !strings.HasSuffix(plain, strings.Repeat(fillCell, 4)) {
+		t.Fatalf("expected trailing fill cells, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected fill background sequence, got %q", got)
+	}
+}
+
+func TestPadStyledLineReplacesExistingTrailingSpaces(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := padStyledLine("Hi    ", 6, fill)
+	plain := ansi.Strip(got)
+
+	if plain != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected fill background sequence, got %q", got)
+	}
+}
+
+func TestCenterStyledLineUsesStyledFillCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := centerStyledLine("Hi", 8, fill)
+	plain := ansi.Strip(got)
+
+	if plain != strings.Repeat(fillCell, 3)+"Hi"+strings.Repeat(fillCell, 3) {
+		t.Fatalf("expected centered fill cells around text, got %q", plain)
+	}
+	if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+		t.Fatalf("expected no raw edge spaces, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected styled fill cells, got %q", got)
+	}
+}
+
+func TestPlaceStyledBlockUsesStyledFillCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := placeStyledBlock("Hi", 3, 8, fill)
+	lines := strings.Split(got, "\n")
+
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
+		}
+		if width := ansi.StringWidth(plain); width != 8 {
+			t.Fatalf("line %d expected width 8, got %d: %q", i, width, plain)
+		}
+		if !strings.Contains(line, "48;2;18;52;86") {
+			t.Fatalf("line %d expected styled fill cells, got %q", i, line)
+		}
+	}
+}
+
+func TestFillLineReplacesExistingTrailingSpaces(t *testing.T) {
+	got := fillLine("Hi    ", 6)
+
+	if got != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", got)
+	}
+}
+
+func TestFitPlainLineReplacesExistingTrailingSpaces(t *testing.T) {
+	got := fitPlainLine("Hi    ", 6)
+
+	if got != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", got)
+	}
+}
+
+func TestHorizontalArtKeepsAsciiArtWhitespacePlain(t *testing.T) {
+	lines := horizontalArt([]string{"x", "wide"}, []string{"yz"})
+
+	if len(lines) != 2 {
+		t.Fatalf("expected two art rows, got %d", len(lines))
+	}
+	firstWidth := lipgloss.Width(lines[0])
+	for i, line := range lines {
+		if strings.Contains(line, fillCell) {
+			t.Fatalf("line %d expected logo art to avoid fill cells inside glyph spacing, got %q", i, line)
+		}
+		if !strings.Contains(line, "   ") {
+			t.Fatalf("line %d expected logo art to keep plain spacing between parts, got %q", i, line)
+		}
+		if width := lipgloss.Width(line); width != firstWidth {
+			t.Fatalf("line %d expected fixed logo row width %d, got %d: %q", i, firstWidth, width, line)
+		}
+	}
+}
+
+func TestFillBlockPaintsBlankAndTrailingCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	content := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("One") + "\n\n" + strings.Repeat("x", 12)
+
+	got := fillBlock(content, 4, 8, fill)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		if width := ansi.StringWidth(ansi.Strip(line)); width != 8 {
+			t.Fatalf("line %d expected width 8, got %d: %q", i, width, line)
+		}
+		if i != 2 && !strings.Contains(line, "48;2;18;52;86") {
+			t.Fatalf("line %d expected fill background, got %q", i, line)
+		}
+	}
+	if width := ansi.StringWidth(ansi.Strip(lines[2])); width != 8 {
+		t.Fatalf("expected overlong line to truncate to width 8, got %d: %q", width, ansi.Strip(lines[2]))
+	}
+}
+
+func TestWelcomeStatusTextUsesPanelBackground(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.reviewPRs = []github.PRSearchResult{{Title: "One"}}
+
+	rendered := m.renderWelcomeStatus(96)
+	if !strings.Contains(ansi.Strip(rendered), "Review requests assigned to you") {
+		t.Fatalf("expected welcome subtitle, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "48;2;13;23;38") {
+		t.Fatalf("expected panel background under welcome status text, got %q", rendered)
+	}
+}
+
 func TestNewWithTargetStartsLoading(t *testing.T) {
 	m := New(Options{Config: &config.Store{}, HasTarget: true, Target: github.Target{Owner: "owner", Repo: "repo", Number: 1}})
 
@@ -194,6 +333,25 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	}
 }
 
+func TestWelcomeArtRowsKeepFixedAlignment(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	art := m.renderWelcomeArt(200, 20)
+	if art == "" {
+		t.Fatal("expected welcome art to render")
+	}
+
+	lines := strings.Split(art, "\n")
+	firstWidth := lipgloss.Width(lines[0])
+	for i, line := range lines {
+		if strings.Contains(line, fillCell) {
+			t.Fatalf("line %d expected no fill cells inside logo art, got %q", i, line)
+		}
+		if width := lipgloss.Width(line); width != firstWidth {
+			t.Fatalf("line %d expected fixed art width %d, got %d: %q", i, firstWidth, width, line)
+		}
+	}
+}
+
 func TestWelcomePickerListStartsOnStableRowAcrossSections(t *testing.T) {
 	m := New(Options{Config: &config.Store{}})
 	m.width = 96
@@ -326,6 +484,28 @@ func TestWelcomePickerDoesNotJumpWhenRepositoryLoadingFinishes(t *testing.T) {
 	}
 }
 
+func TestWelcomePickerLoadingTextUsesPanelBackground(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 32
+	m.stage = stageWelcome
+	m.pickerBusy = true
+	m.syncComponents()
+
+	content := m.renderWelcome()
+	line := firstLineContaining(content, "Loading...")
+	if line == "" {
+		t.Fatalf("expected loading row, got:\n%s", content)
+	}
+	if !strings.Contains(line, "48;2;13;23;38") {
+		t.Fatalf("expected panel background under loading text, got %q", line)
+	}
+	plain := ansi.Strip(line)
+	if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+		t.Fatalf("expected loading row to avoid raw edge spaces, got %q", plain)
+	}
+}
+
 func TestNavigationDelegatePadsSelectedRows(t *testing.T) {
 	style := defaultStyles()
 	delegate := navigationDelegate{style: style}
@@ -339,6 +519,9 @@ func TestNavigationDelegatePadsSelectedRows(t *testing.T) {
 		if got := ansi.StringWidth(line); got != 32 {
 			t.Fatalf("line %d expected width 32, got %d: %q", i, got, line)
 		}
+	}
+	if !strings.Contains(buf.String(), "48;2") {
+		t.Fatalf("expected selected row background fill, got %q", buf.String())
 	}
 }
 
@@ -361,7 +544,7 @@ func firstLineContaining(content, needle string) string {
 }
 
 func isBlankPanelRow(line string) bool {
-	return strings.Trim(line, " ┃") == ""
+	return strings.Trim(line, " \u00a0┃") == ""
 }
 
 func TestManualTypingFiltersScopedRepositoryPool(t *testing.T) {
@@ -432,6 +615,27 @@ func TestWelcomePickerFitsTerminal(t *testing.T) {
 	for i, line := range strings.Split(content, "\n") {
 		if got := lipgloss.Width(line); got != m.width {
 			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
+		}
+	}
+}
+
+func TestLoadingFrameUsesFullTerminal(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 88
+	m.height = 22
+	m.stage = stageLoading
+
+	content := m.renderFrame("Loading pull request...", []string{"Validating gh auth status", "Fetching PR metadata and diff"})
+	if got := lipgloss.Height(content); got != m.height {
+		t.Fatalf("expected height %d, got %d", m.height, got)
+	}
+	for i, line := range strings.Split(content, "\n") {
+		if got := lipgloss.Width(line); got != m.width {
+			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
+		}
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
 		}
 	}
 }
@@ -565,6 +769,56 @@ func TestStyledDiffLinesKeepDeletedBackgroundWithLanguageColor(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "48;2;42;16;23") {
 		t.Fatalf("expected highlighted deleted line to keep red background, got:\n%s", rendered)
+	}
+}
+
+func TestDiffLinesUseWidthAwareBackgrounds(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+
+	added := m.renderDiffLine("main.go", diff.DiffLine{Type: diff.LineAdded, NewNumber: 7, Content: "func main() { return }"}, 42)
+	if width := lipgloss.Width(added); width != 42 {
+		t.Fatalf("expected added diff line width 42, got %d: %q", width, added)
+	}
+	if !strings.Contains(added, "48;2;12;42;27") {
+		t.Fatalf("expected added diff code area to keep green background, got %q", added)
+	}
+	if !strings.Contains(added, "48;2;13;23;38") {
+		t.Fatalf("expected added diff gutter to keep panel background, got %q", added)
+	}
+
+	context := m.renderDiffLine("main.go", diff.DiffLine{Type: diff.LineContext, OldNumber: 8, NewNumber: 8, Content: "unchanged"}, 42)
+	if width := lipgloss.Width(context); width != 42 {
+		t.Fatalf("expected context diff line width 42, got %d: %q", width, context)
+	}
+	if !strings.Contains(context, "48;2;13;23;38") {
+		t.Fatalf("expected context diff line to keep panel background, got %q", context)
+	}
+}
+
+func TestRightHunkHeaderRowsUseFullWidthBackgrounds(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.rightViewport.SetWidth(42)
+
+	lines := m.rightStyledLines()
+	if len(lines) < 2 {
+		t.Fatalf("expected file and hunk header rows, got %d", len(lines))
+	}
+	for i, line := range lines[:2] {
+		if width := lipgloss.Width(line); width != 42 {
+			t.Fatalf("line %d expected width 42, got %d: %q", i, width, line)
+		}
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
+		}
+	}
+	if !strings.Contains(lines[0], "48;2;13;23;38") {
+		t.Fatalf("expected panel background on file row, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "48;2;31;38;53") {
+		t.Fatalf("expected hunk header background across row, got %q", lines[1])
 	}
 }
 
@@ -755,7 +1009,7 @@ func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
 	if !strings.Contains(rendered, m.style.detailHunk.Render("h1")) {
 		t.Fatalf("expected selected hunk badge in details, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, m.style.detailRail.Render(" ")) {
+	if !strings.Contains(rendered, m.style.detailRail.Render(fillCell)) {
 		t.Fatalf("expected selected rail marker in details, got:\n%s", rendered)
 	}
 	if lipgloss.Width(m.readingStepRefPrefix(true)) != lipgloss.Width(m.readingStepRefPrefix(false)) {
@@ -763,6 +1017,28 @@ func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
 	}
 	if lipgloss.Width(m.style.detailHunk.Render("h1")) != lipgloss.Width("h1") {
 		t.Fatal("expected selected hunk badge to keep the hunk id width stable")
+	}
+}
+
+func TestGroupedDetailsReadingRowsUsePanelBackground(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.selectedHunk = 0
+
+	lines, selectedLine := m.centerScrollStyledLines(58)
+	if selectedLine < 0 || selectedLine+1 >= len(lines) {
+		t.Fatalf("expected selected prose and ref lines, got selected=%d lines=%d", selectedLine, len(lines))
+	}
+	for _, line := range []string{lines[selectedLine], lines[selectedLine+1]} {
+		if width := lipgloss.Width(line); width != 58 {
+			t.Fatalf("expected filled reading row width 58, got %d: %q", width, line)
+		}
+		if !strings.Contains(line, "48;2;13;23;38") {
+			t.Fatalf("expected panel background under reading row, got %q", line)
+		}
+	}
+	if strings.Contains(lines[selectedLine], "48;2;53;213;255mFirst hunk") {
+		t.Fatalf("expected selected prose to avoid full cyan background, got %q", lines[selectedLine])
 	}
 }
 

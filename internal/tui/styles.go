@@ -15,45 +15,64 @@ import (
 )
 
 type styles struct {
-	app          lipgloss.Style
-	header       lipgloss.Style
-	headerTitle  lipgloss.Style
-	headerMeta   lipgloss.Style
-	chip         lipgloss.Style
-	chipHot      lipgloss.Style
-	chipCool     lipgloss.Style
-	panelTitle   lipgloss.Style
-	panel        lipgloss.Style
-	panelFocused lipgloss.Style
-	footer       lipgloss.Style
-	status       lipgloss.Style
-	subtle       lipgloss.Style
-	emphasis     lipgloss.Style
-	section      lipgloss.Style
-	callout      lipgloss.Style
-	errorText    lipgloss.Style
-	success      lipgloss.Style
-	warning      lipgloss.Style
-	navTitle     lipgloss.Style
-	navDesc      lipgloss.Style
-	navSelected  lipgloss.Style
-	navSelectedD lipgloss.Style
-	diffGutter   lipgloss.Style
-	diffHeader   lipgloss.Style
-	diffAdded    lipgloss.Style
-	diffDeleted  lipgloss.Style
-	diffContext  lipgloss.Style
-	diffSelected lipgloss.Style
-	detailText   lipgloss.Style
-	detailMeta   lipgloss.Style
-	detailRail   lipgloss.Style
-	detailHunk   lipgloss.Style
+	app           lipgloss.Style
+	appFill       lipgloss.Style
+	header        lipgloss.Style
+	headerFill    lipgloss.Style
+	headerTitle   lipgloss.Style
+	headerMeta    lipgloss.Style
+	chip          lipgloss.Style
+	chipHot       lipgloss.Style
+	chipCool      lipgloss.Style
+	panelTitle    lipgloss.Style
+	panelSubtitle lipgloss.Style
+	panelEmphasis lipgloss.Style
+	panelSection  lipgloss.Style
+	panel         lipgloss.Style
+	panelFocused  lipgloss.Style
+	panelFill     lipgloss.Style
+	footer        lipgloss.Style
+	footerFill    lipgloss.Style
+	footerSubtle  lipgloss.Style
+	status        lipgloss.Style
+	subtle        lipgloss.Style
+	emphasis      lipgloss.Style
+	section       lipgloss.Style
+	callout       lipgloss.Style
+	errorText     lipgloss.Style
+	errorTextP    lipgloss.Style
+	success       lipgloss.Style
+	warning       lipgloss.Style
+	navTitle      lipgloss.Style
+	navDesc       lipgloss.Style
+	navFill       lipgloss.Style
+	navSelected   lipgloss.Style
+	navSelectedD  lipgloss.Style
+	navSelectedF  lipgloss.Style
+	navSelectedDF lipgloss.Style
+	diffGutter    lipgloss.Style
+	diffGutterP   lipgloss.Style
+	diffHeader    lipgloss.Style
+	diffAdded     lipgloss.Style
+	diffDeleted   lipgloss.Style
+	diffContext   lipgloss.Style
+	diffContextP  lipgloss.Style
+	diffSelected  lipgloss.Style
+	diffSelectedF lipgloss.Style
+	detailText    lipgloss.Style
+	detailTextP   lipgloss.Style
+	detailMeta    lipgloss.Style
+	detailMetaP   lipgloss.Style
+	detailRail    lipgloss.Style
+	detailHunk    lipgloss.Style
 }
 
 func defaultStyles() styles {
 	ink := lipgloss.Color("#070B12")
+	headerBG := lipgloss.Color("#09111E")
 	panel := lipgloss.Color("#0D1726")
 	panelEdge := lipgloss.Color("#21324B")
+	footerBG := lipgloss.Color("#111A2A")
 	ember := lipgloss.Color("#FF7A1A")
 	cyan := lipgloss.Color("#35D5FF")
 	amber := lipgloss.Color("#FFC857")
@@ -61,19 +80,26 @@ func defaultStyles() styles {
 	text := lipgloss.Color("#DCE8F5")
 	green := lipgloss.Color("#7CFFB2")
 	red := lipgloss.Color("#FF6B7A")
+	selectedDescBG := lipgloss.Color("#3B1F0B")
 
 	return styles{
 		app: lipgloss.NewStyle().
 			Foreground(text).
 			Background(ink),
+		appFill: lipgloss.NewStyle().
+			Background(ink),
 		header: lipgloss.NewStyle().
 			Foreground(text).
-			Background(lipgloss.Color("#09111E")),
+			Background(headerBG),
+		headerFill: lipgloss.NewStyle().
+			Background(headerBG),
 		headerTitle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ember),
+			Foreground(ember).
+			Background(headerBG),
 		headerMeta: lipgloss.NewStyle().
-			Foreground(muted),
+			Foreground(muted).
+			Background(headerBG),
 		chip: lipgloss.NewStyle().
 			Foreground(text).
 			Background(lipgloss.Color("#16253A")).
@@ -91,6 +117,17 @@ func defaultStyles() styles {
 		panelTitle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber),
+		panelSubtitle: lipgloss.NewStyle().
+			Foreground(muted).
+			Background(panel),
+		panelEmphasis: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(cyan).
+			Background(panel),
+		panelSection: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(amber).
+			Background(panel),
 		panel: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(panelEdge).
@@ -101,17 +138,26 @@ func defaultStyles() styles {
 			BorderForeground(ember).
 			Background(panel).
 			Foreground(text),
+		panelFill: lipgloss.NewStyle().
+			Background(panel),
 		footer: lipgloss.NewStyle().
 			Foreground(text).
-			Background(lipgloss.Color("#111A2A")),
+			Background(footerBG),
+		footerFill: lipgloss.NewStyle().
+			Background(footerBG),
+		footerSubtle: lipgloss.NewStyle().
+			Foreground(muted).
+			Background(footerBG),
 		status: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(amber),
+			Foreground(amber).
+			Background(footerBG),
 		subtle: lipgloss.NewStyle().
 			Foreground(muted),
 		emphasis: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(cyan),
+			Foreground(cyan).
+			Background(headerBG),
 		section: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber),
@@ -124,6 +170,10 @@ func defaultStyles() styles {
 		errorText: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(red),
+		errorTextP: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(red).
+			Background(panel),
 		success: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(green),
@@ -131,18 +181,29 @@ func defaultStyles() styles {
 			Bold(true).
 			Foreground(amber),
 		navTitle: lipgloss.NewStyle().
-			Foreground(text),
+			Foreground(text).
+			Background(panel),
 		navDesc: lipgloss.NewStyle().
-			Foreground(muted),
+			Foreground(muted).
+			Background(panel),
+		navFill: lipgloss.NewStyle().
+			Background(panel),
 		navSelected: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ink).
 			Background(ember),
 		navSelectedD: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFE3C2")).
-			Background(lipgloss.Color("#3B1F0B")),
+			Background(selectedDescBG),
+		navSelectedF: lipgloss.NewStyle().
+			Background(ember),
+		navSelectedDF: lipgloss.NewStyle().
+			Background(selectedDescBG),
 		diffGutter: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#54657A")),
+		diffGutterP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#54657A")).
+			Background(panel),
 		diffHeader: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber).
@@ -155,14 +216,25 @@ func defaultStyles() styles {
 			Background(lipgloss.Color("#2A1017")),
 		diffContext: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#AAB8C8")),
+		diffContextP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#AAB8C8")).
+			Background(panel),
 		diffSelected: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ink).
 			Background(cyan),
+		diffSelectedF: lipgloss.NewStyle().
+			Background(cyan),
 		detailText: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F4F8FC")),
+		detailTextP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F4F8FC")).
+			Background(panel),
 		detailMeta: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#B8C7D8")),
+		detailMetaP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B8C7D8")).
+			Background(panel),
 		detailRail: lipgloss.NewStyle().
 			Background(cyan),
 		detailHunk: lipgloss.NewStyle().
@@ -237,16 +309,20 @@ func (d navigationDelegate) Render(w io.Writer, model list.Model, index int, ite
 	prefix := "  "
 	titleStyle := d.style.navTitle
 	descStyle := d.style.navDesc
+	titleFill := d.style.navFill
+	descFill := d.style.navFill
 	if selected {
 		prefix = "> "
 		titleStyle = d.style.navSelected
 		descStyle = d.style.navSelectedD
+		titleFill = d.style.navSelectedF
+		descFill = d.style.navSelectedDF
 	}
 
 	titleWidth := max(1, width-lipgloss.Width(prefix))
-	title := fitPlainLine(prefix+ansi.Truncate(nav.Title(), titleWidth, "..."), width)
-	desc := fitPlainLine("  "+ansi.Truncate(nav.Description(), max(1, width-2), "..."), width)
-	fmt.Fprintf(w, "%s\n%s", titleStyle.Render(title), descStyle.Render(desc))
+	title := prefix + ansi.Truncate(nav.Title(), titleWidth, "...")
+	desc := "  " + ansi.Truncate(nav.Description(), max(1, width-2), "...")
+	fmt.Fprintf(w, "%s\n%s", padStyledLine(titleStyle.Render(title), width, titleFill), padStyledLine(descStyle.Render(desc), width, descFill))
 }
 
 func newViewport(style styles) viewport.Model {
@@ -265,12 +341,12 @@ func newHelp(style styles) help.Model {
 	model.ShortSeparator = " | "
 	model.FullSeparator = "   "
 	model.Styles.ShortKey = style.chipCool
-	model.Styles.ShortDesc = style.subtle
-	model.Styles.ShortSeparator = style.subtle
+	model.Styles.ShortDesc = style.footerSubtle
+	model.Styles.ShortSeparator = style.footerSubtle
 	model.Styles.FullKey = style.chipCool
-	model.Styles.FullDesc = style.subtle
-	model.Styles.FullSeparator = style.subtle
-	model.Styles.Ellipsis = style.subtle
+	model.Styles.FullDesc = style.footerSubtle
+	model.Styles.FullSeparator = style.footerSubtle
+	model.Styles.Ellipsis = style.footerSubtle
 	return model
 }
 

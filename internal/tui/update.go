@@ -771,7 +771,7 @@ func (m *Model) setComponentSizes(leftW, leftInnerH, centerW, centerInnerH, righ
 
 	centerBodyH := max(0, centerInnerH-1)
 	centerBodyW := max(1, centerW-2)
-	overview := cropLines(strings.Join(m.centerOverviewStyledLines(centerBodyW), "\n"), m.centerOverviewHeight(centerBodyH), centerBodyW)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(centerBodyW), "\n"), m.centerOverviewHeight(centerBodyH), centerBodyW, m.style.panelFill)
 	m.centerViewport.SetWidth(centerBodyW)
 	m.centerViewport.SetHeight(max(0, centerBodyH-lipgloss.Height(overview)))
 
