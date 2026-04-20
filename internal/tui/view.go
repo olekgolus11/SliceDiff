@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -37,6 +38,7 @@ func (m Model) View() tea.View {
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
 	view.WindowTitle = "SliceDiff"
+	view.BackgroundColor = color.RGBA{R: 0x07, G: 0x0B, B: 0x12, A: 0xFF}
 	return view
 }
 
@@ -46,7 +48,7 @@ func (m Model) renderMain() string {
 	contentHeight := max(1, m.height-lipgloss.Height(header)-1)
 	body := m.renderPanels(m.width, contentHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
-	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+	return m.style.app.Render(fillBlock(screen, m.height, m.width, m.style.appFill))
 }
 
 func (m Model) renderWelcome() string {
@@ -54,7 +56,7 @@ func (m Model) renderWelcome() string {
 	bodyHeight := max(1, m.height-lipgloss.Height(footer))
 	body := m.renderWelcomeBody(m.width, bodyHeight)
 	screen := lipgloss.JoinVertical(lipgloss.Left, body, footer)
-	return m.style.app.Width(m.width).Render(fitLines(screen, m.height, m.width))
+	return m.style.app.Render(fillBlock(screen, m.height, m.width, m.style.appFill))
 }
 
 const welcomeSliceArt = `
@@ -119,15 +121,15 @@ func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 		if lipgloss.Width(line) > width && !strings.Contains(line, "\x1b[") {
 			line = ansi.Truncate(line, width, "...")
 		}
-		lines[i] = fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
+		lines[i] = padStyledLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width, m.style.panelFill)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
-	rows := []string{fillLine("", width)}
+	rows := []string{padStyledLine("", width, m.style.panelFill)}
 	if m.welcomeSection != welcomeManual || m.manualStep != manualRepos {
-		return append(rows, fillLine("", width), fillLine("", width))
+		return append(rows, padStyledLine("", width, m.style.panelFill), padStyledLine("", width, m.style.panelFill))
 	}
 	prompt := "/ " + m.manualQuery
 	if m.manualQuery == "" {
@@ -135,7 +137,7 @@ func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
 	}
 	searchWidth := max(1, pickerWidth-4)
 	search := m.style.callout.Width(pickerWidth).Render(fitPlainLine(ansi.Truncate(prompt, searchWidth, "..."), searchWidth))
-	return append(rows, centerWelcomeLine(search, width), fillLine("", width))
+	return append(rows, m.centerWelcomeLine(search, width), padStyledLine("", width, m.style.panelFill))
 }
 
 func (m Model) renderWelcomeStatus(width int) string {
@@ -244,36 +246,36 @@ func (m Model) renderWelcomeBody(width, height int) string {
 	cluster := m.renderWelcomeCluster(bodyWidth, maxLogoHeight)
 	lines = append(lines, cluster, "")
 	lines = append(lines, m.renderWelcomeSearchRows(bodyWidth, pickerWidth)...)
-	lines = fillWelcomeLines(lines, bodyWidth)
+	lines = m.fillWelcomeLines(lines, bodyWidth)
 	availableHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
 	listHeight := welcomePickerListHeight(availableHeight)
 	if m.pickerBusy {
 		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading...")
 		loading = lipgloss.PlaceHorizontal(pickerWidth, lipgloss.Center, loading)
-		lines = append(lines, centerWelcomeBlock(fitLines(loading, listHeight, pickerWidth), bodyWidth)...)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(loading, listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	} else if m.pickerErr != "" {
 		errBlock := strings.Join([]string{
 			m.style.errorText.Render("Could not load choices."),
 			m.style.diffContext.Render(ansi.Truncate(m.pickerErr, pickerWidth, "...")),
 		}, "\n")
-		lines = append(lines, centerWelcomeBlock(fitLines(errBlock, listHeight, pickerWidth), bodyWidth)...)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(errBlock, listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	} else {
 		m.syncPickerList()
 		pickerList := m.pickerList
 		pickerList.SetSize(pickerWidth, listHeight)
 		pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
-		lines = append(lines, centerWelcomeBlock(fitLines(pickerList.View(), listHeight, pickerWidth), bodyWidth)...)
+		lines = append(lines, m.centerWelcomeBlock(fillBlock(pickerList.View(), listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	}
 	contentHeight := lipgloss.Height(strings.Join(lines, "\n"))
 	topPad := max(0, (bodyHeight-contentHeight)/2)
 	if topPad > 0 {
 		padded := make([]string, 0, len(lines)+topPad)
 		for i := 0; i < topPad; i++ {
-			padded = append(padded, fillLine("", bodyWidth))
+			padded = append(padded, padStyledLine("", bodyWidth, m.style.panelFill))
 		}
 		lines = append(padded, lines...)
 	}
-	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
+	body := fillBlock(strings.Join(lines, "\n"), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(m.welcomePanelTitle(), body, width, innerHeight, true)
 }
 
@@ -288,7 +290,7 @@ func (m Model) renderPickerFooter() string {
 		m.style.subtle.Render(" | "),
 		m.style.subtle.Render(truncate(help, max(1, m.width-lipgloss.Width(statusText)-3))),
 	)
-	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
+	return m.style.footer.Render(fillBlock(line, 1, m.width, m.style.footerFill))
 }
 
 func (m Model) welcomePanelTitle() string {
@@ -349,7 +351,7 @@ func (m Model) renderHeader() string {
 	line1 = ansi.Truncate(line1, m.width, "...")
 	line2 := m.style.headerMeta.Render(truncate(meta, max(1, m.width-2)))
 	line2 = ansi.Truncate(line2, m.width, "...")
-	return m.style.header.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2))
+	return m.style.header.Render(fillBlock(lipgloss.JoinVertical(lipgloss.Left, line1, line2), 2, m.width, m.style.headerFill))
 }
 
 func (m Model) headerCounts() string {
@@ -390,7 +392,7 @@ func (m Model) renderFooter() string {
 		m.style.subtle.Render(" | "),
 		helpText,
 	)
-	return m.style.footer.Width(m.width).Render(fitLines(line, 1, m.width))
+	return m.style.footer.Render(fillBlock(line, 1, m.width, m.style.footerFill))
 }
 
 func (m Model) renderPanels(width, height int) string {
@@ -422,7 +424,7 @@ func (m Model) renderListPanel(title string, width, innerHeight int, focused boo
 	listModel := m.leftList
 	listModel.SetSize(bodyWidth, bodyHeight)
 	listModel.Select(m.currentLeftIndex())
-	body := fitLines(listModel.View(), bodyHeight, bodyWidth)
+	body := fillBlock(listModel.View(), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(title, body, width, innerHeight, focused)
 }
 
@@ -435,14 +437,14 @@ func (m Model) renderViewportPanel(title string, p panel, width, innerHeight int
 	}
 	viewportModel.SetWidth(bodyWidth)
 	viewportModel.SetHeight(bodyHeight)
-	body := fitLines(viewportModel.View(), bodyHeight, bodyWidth)
+	body := fillBlock(viewportModel.View(), bodyHeight, bodyWidth, m.style.panelFill)
 	return m.renderPanel(title, body, width, innerHeight, focused)
 }
 
 func (m Model) renderCenterPanel(title string, width, innerHeight int, focused bool) string {
 	bodyHeight := max(0, innerHeight-1)
 	bodyWidth := max(1, width-2)
-	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), m.centerOverviewHeight(bodyHeight), bodyWidth)
+	overview := cropLines(strings.Join(m.centerOverviewStyledLines(bodyWidth), "\n"), m.centerOverviewHeight(bodyHeight), bodyWidth, m.style.panelFill)
 	overviewHeight := lipgloss.Height(overview)
 	remainingHeight := max(0, bodyHeight-overviewHeight)
 
@@ -454,12 +456,12 @@ func (m Model) renderCenterPanel(title string, width, innerHeight int, focused b
 	if selectedStart >= 0 {
 		ensureViewportRangeVisible(&viewportModel, selectedStart, selectedEnd)
 	}
-	scrolling := fitLines(viewportModel.View(), remainingHeight, bodyWidth)
+	scrolling := fillBlock(viewportModel.View(), remainingHeight, bodyWidth, m.style.panelFill)
 	body := overview
 	if remainingHeight > 0 {
 		body = lipgloss.JoinVertical(lipgloss.Left, overview, scrolling)
 	}
-	return m.renderPanel(title, fitLines(body, bodyHeight, bodyWidth), width, innerHeight, focused)
+	return m.renderPanel(title, fillBlock(body, bodyHeight, bodyWidth, m.style.panelFill), width, innerHeight, focused)
 }
 
 func (m Model) centerOverviewHeight(bodyHeight int) int {
@@ -472,10 +474,10 @@ func (m Model) centerOverviewHeight(bodyHeight int) int {
 func (m Model) renderPanel(title, body string, width, innerHeight int, focused bool) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(0, innerHeight)
-	content := fitLines(body, contentHeight, contentWidth)
+	content := fillBlock(body, contentHeight, contentWidth, m.style.panelFill)
 	if title != "" {
-		titleLine := m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "..."))
-		content = lipgloss.JoinVertical(lipgloss.Left, titleLine, fitLines(body, max(0, innerHeight-1), contentWidth))
+		titleLine := padStyledLine(m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "...")), contentWidth, m.style.panelFill)
+		content = lipgloss.JoinVertical(lipgloss.Left, titleLine, fillBlock(body, max(0, innerHeight-1), contentWidth, m.style.panelFill))
 	}
 	return panelStyle(m.style, focused, width).Render(content)
 }
@@ -774,6 +776,7 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 			if hunkSignal(hunk) != diff.HunkSignalFocus {
 				line += " " + m.style.subtle.Render(string(hunkSignal(hunk))+":"+hunkQuietReason(hunk))
 			}
+			line = padStyledLine(line, width, m.style.diffSelectedF)
 			selectedLine = len(lines)
 		} else {
 			line = m.style.diffContext.Render(line)
@@ -993,8 +996,9 @@ func (m Model) renderFrame(title string, lines []string) string {
 		body = append(body, m.style.diffContext.Render(line))
 	}
 	body = append(body, "", m.style.subtle.Render("q quits"))
-	panel := m.renderPanel("SliceDiff", fitLines(strings.Join(body, "\n"), min(height-4, 18), min(width-4, 92)), min(width, 96), min(height-2, 20), true)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel)
+	panelBody := fillBlock(strings.Join(body, "\n"), min(height-4, 18), min(width-4, 92), m.style.panelFill)
+	panel := m.renderPanel("SliceDiff", panelBody, min(width, 96), min(height-2, 20), true)
+	return fillBlock(lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, panel), height, width, m.style.appFill)
 }
 
 func (m Model) renderRunnerPicker() string {
@@ -1213,43 +1217,75 @@ func shortenPathAfterFirstSlash(path string, width int) string {
 }
 
 func fitLines(content string, height, width int) string {
-	if height <= 0 {
+	return fillBlock(content, height, width, lipgloss.NewStyle())
+}
+
+func fillBlock(content string, height, width int, fill lipgloss.Style) string {
+	if height <= 0 || width <= 0 {
 		return ""
 	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	if len(lines) > height {
 		lines = lines[:height]
 	}
-	for i, line := range lines {
-		if width > 0 {
-			if lipgloss.Width(line) > width {
-				lines[i] = ansi.Truncate(line, width, "...")
-			}
-		}
+	out := make([]string, 0, height)
+	for _, line := range lines {
+		out = append(out, padStyledLine(line, width, fill))
 	}
-	for len(lines) < height {
-		lines = append(lines, "")
+	for len(out) < height {
+		out = append(out, padStyledLine("", width, fill))
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
 
-func fillWelcomeLines(lines []string, width int) []string {
+func padStyledLine(line string, width int, fill lipgloss.Style) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(line) > width {
+		line = ansi.Truncate(line, width, "...")
+	}
+	line = replaceTrailingSpaces(line, fill)
+	if gap := width - lipgloss.Width(line); gap > 0 {
+		line += fill.Render(strings.Repeat(fillCell, gap))
+	}
+	return line
+}
+
+// fillCell is intentionally a non-breaking space. Bubble Tea v2's renderer can
+// optimize trailing ASCII spaces into erase operations, which leaves some
+// terminals showing the default background at the right edge.
+const fillCell = "\u00a0"
+
+func replaceTrailingSpaces(line string, fill lipgloss.Style) string {
+	gap := 0
+	for len(line) > gap && line[len(line)-1-gap] == ' ' {
+		gap++
+	}
+	if gap == 0 {
+		return line
+	}
+	return line[:len(line)-gap] + fill.Render(strings.Repeat(fillCell, gap))
+}
+
+func (m Model) fillWelcomeLines(lines []string, width int) []string {
 	for i, line := range lines {
-		lines[i] = fillLine(line, width)
+		lines[i] = padStyledLine(line, width, m.style.panelFill)
 	}
 	return lines
 }
 
-func centerWelcomeBlock(content string, width int) []string {
+func (m Model) centerWelcomeBlock(content string, width int) []string {
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		lines[i] = centerWelcomeLine(line, width)
+		lines[i] = m.centerWelcomeLine(line, width)
 	}
 	return lines
 }
 
-func centerWelcomeLine(line string, width int) string {
-	return fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
+func (m Model) centerWelcomeLine(line string, width int) string {
+	return padStyledLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width, m.style.panelFill)
 }
 
 func welcomePickerWidth(width int) int {
@@ -1293,7 +1329,7 @@ func fitPlainLine(line string, width int) string {
 	return line
 }
 
-func cropLines(content string, height, width int) string {
+func cropLines(content string, height, width int, fill lipgloss.Style) string {
 	if height <= 0 {
 		return ""
 	}
@@ -1307,6 +1343,7 @@ func cropLines(content string, height, width int) string {
 				lines[i] = ansi.Truncate(line, width, "...")
 			}
 		}
+		lines[i] = padStyledLine(lines[i], width, fill)
 	}
 	return strings.Join(lines, "\n")
 }

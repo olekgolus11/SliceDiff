@@ -47,6 +47,58 @@ func TestHorizontalPanelWidthsPrioritizeDiff(t *testing.T) {
 	}
 }
 
+func TestPadStyledLineFillsTrailingCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	line := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("Hi")
+
+	got := padStyledLine(line, 6, fill)
+	plain := ansi.Strip(got)
+	if width := ansi.StringWidth(plain); width != 6 {
+		t.Fatalf("expected visual width 6, got %d: %q", width, got)
+	}
+	if !strings.HasSuffix(plain, strings.Repeat(fillCell, 4)) {
+		t.Fatalf("expected trailing fill cells, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected fill background sequence, got %q", got)
+	}
+}
+
+func TestPadStyledLineReplacesExistingTrailingSpaces(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := padStyledLine("Hi    ", 6, fill)
+	plain := ansi.Strip(got)
+
+	if plain != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected fill background sequence, got %q", got)
+	}
+}
+
+func TestFillBlockPaintsBlankAndTrailingCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	content := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("One") + "\n\n" + strings.Repeat("x", 12)
+
+	got := fillBlock(content, 4, 8, fill)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		if width := ansi.StringWidth(ansi.Strip(line)); width != 8 {
+			t.Fatalf("line %d expected width 8, got %d: %q", i, width, line)
+		}
+		if i != 2 && !strings.Contains(line, "48;2;18;52;86") {
+			t.Fatalf("line %d expected fill background, got %q", i, line)
+		}
+	}
+	if width := ansi.StringWidth(ansi.Strip(lines[2])); width != 8 {
+		t.Fatalf("expected overlong line to truncate to width 8, got %d: %q", width, ansi.Strip(lines[2]))
+	}
+}
+
 func TestNewWithTargetStartsLoading(t *testing.T) {
 	m := New(Options{Config: &config.Store{}, HasTarget: true, Target: github.Target{Owner: "owner", Repo: "repo", Number: 1}})
 
@@ -340,6 +392,9 @@ func TestNavigationDelegatePadsSelectedRows(t *testing.T) {
 			t.Fatalf("line %d expected width 32, got %d: %q", i, got, line)
 		}
 	}
+	if !strings.Contains(buf.String(), "48;2") {
+		t.Fatalf("expected selected row background fill, got %q", buf.String())
+	}
 }
 
 func lineIndexContaining(content, needle string) int {
@@ -361,7 +416,7 @@ func firstLineContaining(content, needle string) string {
 }
 
 func isBlankPanelRow(line string) bool {
-	return strings.Trim(line, " ┃") == ""
+	return strings.Trim(line, " \u00a0┃") == ""
 }
 
 func TestManualTypingFiltersScopedRepositoryPool(t *testing.T) {
@@ -426,6 +481,23 @@ func TestWelcomePickerFitsTerminal(t *testing.T) {
 	m.syncComponents()
 
 	content := m.renderWelcome()
+	if got := lipgloss.Height(content); got != m.height {
+		t.Fatalf("expected height %d, got %d", m.height, got)
+	}
+	for i, line := range strings.Split(content, "\n") {
+		if got := lipgloss.Width(line); got != m.width {
+			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
+		}
+	}
+}
+
+func TestLoadingFrameUsesFullTerminal(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 88
+	m.height = 22
+	m.stage = stageLoading
+
+	content := m.renderFrame("Loading pull request...", []string{"Validating gh auth status", "Fetching PR metadata and diff"})
 	if got := lipgloss.Height(content); got != m.height {
 		t.Fatalf("expected height %d, got %d", m.height, got)
 	}
