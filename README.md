@@ -5,6 +5,8 @@
 
 SliceDiff is a local terminal UI for understanding large GitHub pull requests by turning raw file-by-file diffs into reviewable slices while keeping every grouped hunk traceable back to the original diff.
 
+You can start it with a PR target right away, or launch it with no argument to open a welcome screen where you can browse your requested reviews or search for a repository and pick one of its open pull requests.
+
 ## Current State
 
 SliceDiff is an active prototype that is usable locally today. It is built for reviewers who already have a large pull request in front of them and want a faster way to understand how related edits fit together.
@@ -17,6 +19,7 @@ This is not a GitHub review bot, not a production collaboration platform, and no
 ## What Works Today
 
 - Load exactly one GitHub pull request through the GitHub CLI.
+- Start with no PR target and choose from requested reviews or a manual repository search inside the app.
 - Parse the unified diff into files, hunks, and line-level changes.
 - Navigate the raw diff in a keyboard-first Bubbletea TUI.
 - Optionally ask Codex or opencode to group hunks into semantic review slices.
@@ -86,6 +89,15 @@ go run ./cmd/slicediff --no-ai 123
 ```
 
 The plain number form must be run inside a local checkout that `gh repo view` can resolve.
+
+### Start Without A PR Target
+
+If you do not pass a PR target, SliceDiff opens a welcome screen instead of loading a specific diff:
+
+- `Requested review` shows pull requests assigned to you.
+- `Manual` lets you search repositories you can access, then choose one of that repo's open pull requests.
+
+Use `tab`, `left`, or `right` to switch between the two paths, and `enter` to select the highlighted item.
 
 ### Start With AI Grouping
 
