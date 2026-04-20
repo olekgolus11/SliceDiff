@@ -121,6 +121,9 @@ func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 		if lipgloss.Width(line) > width && !strings.Contains(line, "\x1b[") {
 			line = ansi.Truncate(line, width, "...")
 		}
+		if i < len(lines)-4 {
+			line = m.style.panelFill.Render(line)
+		}
 		lines[i] = centerStyledLine(line, width, m.style.panelFill)
 	}
 	return strings.Join(lines, "\n")
@@ -196,16 +199,20 @@ func horizontalArt(parts ...[]string) []string {
 			if partRow >= 0 && partRow < len(part) {
 				line = part[partRow]
 			}
-			pieces[i] = padRight(line, widths[i])
+			if i == len(parts)-1 {
+				pieces[i] = line
+			} else {
+				pieces[i] = padRight(line, widths[i])
+			}
 		}
-		lines[row] = strings.Join(pieces, strings.Repeat(fillCell, 3))
+		lines[row] = strings.TrimRight(strings.Join(pieces, "   "), " ")
 	}
 	return lines
 }
 
 func padRight(line string, width int) string {
 	if gap := width - lipgloss.Width(line); gap > 0 {
-		line += strings.Repeat(fillCell, gap)
+		line += strings.Repeat(" ", gap)
 	}
 	return line
 }
@@ -250,7 +257,7 @@ func (m Model) renderWelcomeBody(width, height int) string {
 	availableHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
 	listHeight := welcomePickerListHeight(availableHeight)
 	if m.pickerBusy {
-		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), fillCell, "Loading...")
+		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), m.style.panelFill.Render(fillCell), m.style.diffContextP.Render("Loading..."))
 		loading = centerStyledLine(loading, pickerWidth, m.style.panelFill)
 		lines = append(lines, m.centerWelcomeBlock(fillBlock(loading, listHeight, pickerWidth, m.style.panelFill), bodyWidth)...)
 	} else if m.pickerErr != "" {
@@ -999,7 +1006,7 @@ func (m Model) renderFrame(title string, lines []string) string {
 		"",
 	}
 	if m.stage == stageLoading || m.aiBusy {
-		body[0] = lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), fillCell, body[0])
+		body[0] = lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), m.style.panelFill.Render(fillCell), body[0])
 	}
 	for _, line := range lines {
 		body = append(body, m.style.diffContextP.Render(line))

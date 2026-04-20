@@ -131,17 +131,20 @@ func TestFitPlainLineReplacesExistingTrailingSpaces(t *testing.T) {
 	}
 }
 
-func TestHorizontalArtUsesFillCellsForPadding(t *testing.T) {
+func TestHorizontalArtKeepsAsciiArtWhitespacePlain(t *testing.T) {
 	lines := horizontalArt([]string{"x"}, []string{"yz"})
 
 	if len(lines) != 1 {
 		t.Fatalf("expected one art row, got %d", len(lines))
 	}
-	if strings.Contains(lines[0], "  ") {
-		t.Fatalf("expected art padding to use fill cells, got %q", lines[0])
+	if strings.Contains(lines[0], fillCell) {
+		t.Fatalf("expected logo art to avoid fill cells inside glyph spacing, got %q", lines[0])
 	}
-	if !strings.Contains(lines[0], fillCell) {
-		t.Fatalf("expected art padding to contain fill cells, got %q", lines[0])
+	if !strings.Contains(lines[0], "   ") {
+		t.Fatalf("expected logo art to keep plain spacing between parts, got %q", lines[0])
+	}
+	if strings.HasSuffix(lines[0], " ") {
+		t.Fatalf("expected logo art row to avoid trailing raw spaces, got %q", lines[0])
 	}
 }
 
@@ -456,6 +459,28 @@ func TestWelcomePickerDoesNotJumpWhenRepositoryLoadingFinishes(t *testing.T) {
 	loadedPickerRow := lineIndexContaining(loaded, "owner/one")
 	if loadingSearchRow != loadedSearchRow || loadingPickerRow != loadedPickerRow {
 		t.Fatalf("expected loading and loaded repository states to keep layout rows stable, search %d/%d picker %d/%d\nloading:\n%s\nloaded:\n%s", loadingSearchRow, loadedSearchRow, loadingPickerRow, loadedPickerRow, loading, loaded)
+	}
+}
+
+func TestWelcomePickerLoadingTextUsesPanelBackground(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 32
+	m.stage = stageWelcome
+	m.pickerBusy = true
+	m.syncComponents()
+
+	content := m.renderWelcome()
+	line := firstLineContaining(content, "Loading...")
+	if line == "" {
+		t.Fatalf("expected loading row, got:\n%s", content)
+	}
+	if !strings.Contains(line, "48;2;13;23;38") {
+		t.Fatalf("expected panel background under loading text, got %q", line)
+	}
+	plain := ansi.Strip(line)
+	if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+		t.Fatalf("expected loading row to avoid raw edge spaces, got %q", plain)
 	}
 }
 
