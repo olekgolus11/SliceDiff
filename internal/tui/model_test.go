@@ -132,19 +132,22 @@ func TestFitPlainLineReplacesExistingTrailingSpaces(t *testing.T) {
 }
 
 func TestHorizontalArtKeepsAsciiArtWhitespacePlain(t *testing.T) {
-	lines := horizontalArt([]string{"x"}, []string{"yz"})
+	lines := horizontalArt([]string{"x", "wide"}, []string{"yz"})
 
-	if len(lines) != 1 {
-		t.Fatalf("expected one art row, got %d", len(lines))
+	if len(lines) != 2 {
+		t.Fatalf("expected two art rows, got %d", len(lines))
 	}
-	if strings.Contains(lines[0], fillCell) {
-		t.Fatalf("expected logo art to avoid fill cells inside glyph spacing, got %q", lines[0])
-	}
-	if !strings.Contains(lines[0], "   ") {
-		t.Fatalf("expected logo art to keep plain spacing between parts, got %q", lines[0])
-	}
-	if strings.HasSuffix(lines[0], " ") {
-		t.Fatalf("expected logo art row to avoid trailing raw spaces, got %q", lines[0])
+	firstWidth := lipgloss.Width(lines[0])
+	for i, line := range lines {
+		if strings.Contains(line, fillCell) {
+			t.Fatalf("line %d expected logo art to avoid fill cells inside glyph spacing, got %q", i, line)
+		}
+		if !strings.Contains(line, "   ") {
+			t.Fatalf("line %d expected logo art to keep plain spacing between parts, got %q", i, line)
+		}
+		if width := lipgloss.Width(line); width != firstWidth {
+			t.Fatalf("line %d expected fixed logo row width %d, got %d: %q", i, firstWidth, width, line)
+		}
 	}
 }
 
@@ -327,6 +330,25 @@ func TestWelcomePickerLargeTerminalRendersSliceCakeDiffArt(t *testing.T) {
 	}
 	if !strings.Contains(content, "Choose a pull request") {
 		t.Fatalf("expected centered choose copy, got:\n%s", content)
+	}
+}
+
+func TestWelcomeArtRowsKeepFixedAlignment(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	art := m.renderWelcomeArt(200, 20)
+	if art == "" {
+		t.Fatal("expected welcome art to render")
+	}
+
+	lines := strings.Split(art, "\n")
+	firstWidth := lipgloss.Width(lines[0])
+	for i, line := range lines {
+		if strings.Contains(line, fillCell) {
+			t.Fatalf("line %d expected no fill cells inside logo art, got %q", i, line)
+		}
+		if width := lipgloss.Width(line); width != firstWidth {
+			t.Fatalf("line %d expected fixed art width %d, got %d: %q", i, firstWidth, width, line)
+		}
 	}
 }
 

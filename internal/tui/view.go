@@ -199,13 +199,9 @@ func horizontalArt(parts ...[]string) []string {
 			if partRow >= 0 && partRow < len(part) {
 				line = part[partRow]
 			}
-			if i == len(parts)-1 {
-				pieces[i] = line
-			} else {
-				pieces[i] = padRight(line, widths[i])
-			}
+			pieces[i] = padRight(line, widths[i])
 		}
-		lines[row] = strings.TrimRight(strings.Join(pieces, "   "), " ")
+		lines[row] = strings.Join(pieces, "   ")
 	}
 	return lines
 }
