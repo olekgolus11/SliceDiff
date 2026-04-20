@@ -239,6 +239,93 @@ func TestWelcomePickerListStartsOnStableRowAcrossSections(t *testing.T) {
 	}
 }
 
+func TestWelcomePickerChromeIsCenteredAndNarrow(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 32
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.reviewPRs = []github.PRSearchResult{{Owner: "owner", Repo: "repo", Number: 12, Title: "Centered picker row"}}
+	m.syncComponents()
+
+	content := ansi.Strip(m.renderWelcome())
+	lines := strings.Split(content, "\n")
+	if strings.Contains(strings.Join(lines[:min(3, len(lines))], "\n"), "SliceDiff") {
+		t.Fatalf("expected no top-left welcome panel title, got:\n%s", content)
+	}
+	chooseRow := lineIndexContaining(content, "Choose a pull request")
+	if chooseRow < 5 {
+		t.Fatalf("expected welcome content to sit lower in the panel, row=%d\n%s", chooseRow, content)
+	}
+	pickerRow := firstLineContaining(content, "> Centered picker row")
+	if pickerRow == "" {
+		t.Fatalf("expected picker row, got:\n%s", content)
+	}
+	if leftPad := strings.Index(pickerRow, "> Centered picker row"); leftPad < 10 {
+		t.Fatalf("expected picker row to be centered in a narrower column, leftPad=%d row=%q", leftPad, pickerRow)
+	}
+}
+
+func TestWelcomePickerDoesNotJumpWhenRepositoryResultCountChanges(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 32
+	m.stage = stageWelcome
+	m.pickerBusy = false
+	m.welcomeSection = welcomeManual
+	m.manualStep = manualRepos
+	m.manualQuery = "repo"
+	m.repoResults = []github.RepositorySearchResult{{FullName: "owner/one", Description: "One"}}
+	m.syncComponents()
+
+	oneResult := ansi.Strip(m.renderWelcome())
+	oneSearchRow := lineIndexContaining(oneResult, "/ repo")
+	onePickerRow := lineIndexContaining(oneResult, "owner/one")
+
+	m.repoResults = []github.RepositorySearchResult{
+		{FullName: "owner/one", Description: "One"},
+		{FullName: "owner/two", Description: "Two"},
+		{FullName: "owner/three", Description: "Three"},
+		{FullName: "owner/four", Description: "Four"},
+		{FullName: "owner/five", Description: "Five"},
+	}
+	m.syncComponents()
+
+	manyResults := ansi.Strip(m.renderWelcome())
+	manySearchRow := lineIndexContaining(manyResults, "/ repo")
+	manyPickerRow := lineIndexContaining(manyResults, "owner/one")
+	if oneSearchRow != manySearchRow || onePickerRow != manyPickerRow {
+		t.Fatalf("expected repository filtering to keep layout rows stable, search %d/%d picker %d/%d\none:\n%s\nmany:\n%s", oneSearchRow, manySearchRow, onePickerRow, manyPickerRow, oneResult, manyResults)
+	}
+}
+
+func TestWelcomePickerDoesNotJumpWhenRepositoryLoadingFinishes(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.width = 96
+	m.height = 32
+	m.stage = stageWelcome
+	m.pickerBusy = true
+	m.welcomeSection = welcomeManual
+	m.manualStep = manualRepos
+	m.manualQuery = "repo"
+	m.syncComponents()
+
+	loading := ansi.Strip(m.renderWelcome())
+	loadingSearchRow := lineIndexContaining(loading, "/ repo")
+	loadingPickerRow := lineIndexContaining(loading, "Loading...")
+
+	m.pickerBusy = false
+	m.repoResults = []github.RepositorySearchResult{{FullName: "owner/one", Description: "One"}}
+	m.syncComponents()
+
+	loaded := ansi.Strip(m.renderWelcome())
+	loadedSearchRow := lineIndexContaining(loaded, "/ repo")
+	loadedPickerRow := lineIndexContaining(loaded, "owner/one")
+	if loadingSearchRow != loadedSearchRow || loadingPickerRow != loadedPickerRow {
+		t.Fatalf("expected loading and loaded repository states to keep layout rows stable, search %d/%d picker %d/%d\nloading:\n%s\nloaded:\n%s", loadingSearchRow, loadedSearchRow, loadingPickerRow, loadedPickerRow, loading, loaded)
+	}
+}
+
 func TestNavigationDelegatePadsSelectedRows(t *testing.T) {
 	style := defaultStyles()
 	delegate := navigationDelegate{style: style}

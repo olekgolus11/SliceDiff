@@ -124,7 +124,7 @@ func (m Model) renderWelcomeCluster(width, maxLogoHeight int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderWelcomeSearchRows(width int) []string {
+func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
 	rows := []string{fillLine("", width)}
 	if m.welcomeSection != welcomeManual || m.manualStep != manualRepos {
 		return append(rows, fillLine("", width), fillLine("", width))
@@ -133,9 +133,9 @@ func (m Model) renderWelcomeSearchRows(width int) []string {
 	if m.manualQuery == "" {
 		prompt = "/ type a repository name"
 	}
-	searchWidth := max(1, width-4)
-	search := m.style.callout.Width(width).Render(fitPlainLine(ansi.Truncate(prompt, searchWidth, "..."), searchWidth))
-	return append(rows, fillLine(search, width), fillLine("", width))
+	searchWidth := max(1, pickerWidth-4)
+	search := m.style.callout.Width(pickerWidth).Render(fitPlainLine(ansi.Truncate(prompt, searchWidth, "..."), searchWidth))
+	return append(rows, centerWelcomeLine(search, width), fillLine("", width))
 }
 
 func (m Model) renderWelcomeStatus(width int) string {
@@ -233,39 +233,45 @@ func (m Model) welcomeSubtitle() string {
 func (m Model) renderWelcomeBody(width, height int) string {
 	bodyWidth := max(1, width-2)
 	innerHeight := max(1, height-2)
-	bodyHeight := max(0, innerHeight-1)
+	bodyHeight := max(0, innerHeight)
+	pickerWidth := welcomePickerWidth(bodyWidth)
 	lines := make([]string, 0, bodyHeight)
 	minListHeight := 6
 	if bodyHeight < 18 {
 		minListHeight = 3
 	}
-	topPad := 0
-	if bodyHeight >= 14 {
-		topPad = 1
-	}
-	maxLogoHeight := max(0, bodyHeight-topPad-minListHeight-9)
+	maxLogoHeight := max(0, bodyHeight-minListHeight-8)
 	cluster := m.renderWelcomeCluster(bodyWidth, maxLogoHeight)
-	for i := 0; i < topPad; i++ {
-		lines = append(lines, fillLine("", bodyWidth))
-	}
 	lines = append(lines, cluster, "")
-	lines = append(lines, m.renderWelcomeSearchRows(bodyWidth)...)
+	lines = append(lines, m.renderWelcomeSearchRows(bodyWidth, pickerWidth)...)
 	lines = fillWelcomeLines(lines, bodyWidth)
+	availableHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
+	listHeight := welcomePickerListHeight(availableHeight)
 	if m.pickerBusy {
 		loading := lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " ", "Loading...")
-		lines = append(lines, fillLine(lipgloss.PlaceHorizontal(bodyWidth, lipgloss.Center, loading), bodyWidth))
+		loading = lipgloss.PlaceHorizontal(pickerWidth, lipgloss.Center, loading)
+		lines = append(lines, centerWelcomeBlock(fitLines(loading, listHeight, pickerWidth), bodyWidth)...)
 	} else if m.pickerErr != "" {
-		lines = append(lines,
-			fillLine(m.style.errorText.Render("Could not load choices."), bodyWidth),
-			fillLine(m.style.diffContext.Render(ansi.Truncate(m.pickerErr, bodyWidth, "...")), bodyWidth),
-		)
+		errBlock := strings.Join([]string{
+			m.style.errorText.Render("Could not load choices."),
+			m.style.diffContext.Render(ansi.Truncate(m.pickerErr, pickerWidth, "...")),
+		}, "\n")
+		lines = append(lines, centerWelcomeBlock(fitLines(errBlock, listHeight, pickerWidth), bodyWidth)...)
 	} else {
 		m.syncPickerList()
-		listHeight := max(0, bodyHeight-lipgloss.Height(strings.Join(lines, "\n")))
 		pickerList := m.pickerList
-		pickerList.SetSize(bodyWidth, listHeight)
+		pickerList.SetSize(pickerWidth, listHeight)
 		pickerList.Select(clamp(m.selectedPicker, 0, max(0, m.pickerItemCount()-1)))
-		lines = append(lines, fitLines(pickerList.View(), listHeight, bodyWidth))
+		lines = append(lines, centerWelcomeBlock(fitLines(pickerList.View(), listHeight, pickerWidth), bodyWidth)...)
+	}
+	contentHeight := lipgloss.Height(strings.Join(lines, "\n"))
+	topPad := max(0, (bodyHeight-contentHeight)/2)
+	if topPad > 0 {
+		padded := make([]string, 0, len(lines)+topPad)
+		for i := 0; i < topPad; i++ {
+			padded = append(padded, fillLine("", bodyWidth))
+		}
+		lines = append(padded, lines...)
 	}
 	body := fitLines(strings.Join(lines, "\n"), bodyHeight, bodyWidth)
 	return m.renderPanel(m.welcomePanelTitle(), body, width, innerHeight, true)
@@ -286,7 +292,7 @@ func (m Model) renderPickerFooter() string {
 }
 
 func (m Model) welcomePanelTitle() string {
-	return "SliceDiff"
+	return ""
 }
 
 func (m Model) welcomeCountLabel() string {
@@ -465,8 +471,12 @@ func (m Model) centerOverviewHeight(bodyHeight int) int {
 
 func (m Model) renderPanel(title, body string, width, innerHeight int, focused bool) string {
 	contentWidth := max(1, width-2)
-	titleLine := m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "..."))
-	content := lipgloss.JoinVertical(lipgloss.Left, titleLine, fitLines(body, max(0, innerHeight-1), contentWidth))
+	contentHeight := max(0, innerHeight)
+	content := fitLines(body, contentHeight, contentWidth)
+	if title != "" {
+		titleLine := m.style.panelTitle.Render(ansi.Truncate(title, contentWidth, "..."))
+		content = lipgloss.JoinVertical(lipgloss.Left, titleLine, fitLines(body, max(0, innerHeight-1), contentWidth))
+	}
 	return panelStyle(m.style, focused, width).Render(content)
 }
 
@@ -1228,6 +1238,35 @@ func fillWelcomeLines(lines []string, width int) []string {
 		lines[i] = fillLine(line, width)
 	}
 	return lines
+}
+
+func centerWelcomeBlock(content string, width int) []string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = centerWelcomeLine(line, width)
+	}
+	return lines
+}
+
+func centerWelcomeLine(line string, width int) string {
+	return fillLine(lipgloss.PlaceHorizontal(width, lipgloss.Center, line), width)
+}
+
+func welcomePickerWidth(width int) int {
+	if width <= 0 {
+		return 0
+	}
+	if width < 68 {
+		return max(1, width-4)
+	}
+	return min(width-8, 76)
+}
+
+func welcomePickerListHeight(availableHeight int) int {
+	if availableHeight <= 0 {
+		return 0
+	}
+	return min(availableHeight, 12)
 }
 
 func fillLine(line string, width int) string {
