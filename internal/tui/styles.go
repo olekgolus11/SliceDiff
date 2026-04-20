@@ -25,6 +25,9 @@ type styles struct {
 	chipHot       lipgloss.Style
 	chipCool      lipgloss.Style
 	panelTitle    lipgloss.Style
+	panelSubtitle lipgloss.Style
+	panelEmphasis lipgloss.Style
+	panelSection  lipgloss.Style
 	panel         lipgloss.Style
 	panelFocused  lipgloss.Style
 	panelFill     lipgloss.Style
@@ -46,14 +49,18 @@ type styles struct {
 	navSelectedF  lipgloss.Style
 	navSelectedDF lipgloss.Style
 	diffGutter    lipgloss.Style
+	diffGutterP   lipgloss.Style
 	diffHeader    lipgloss.Style
 	diffAdded     lipgloss.Style
 	diffDeleted   lipgloss.Style
 	diffContext   lipgloss.Style
+	diffContextP  lipgloss.Style
 	diffSelected  lipgloss.Style
 	diffSelectedF lipgloss.Style
 	detailText    lipgloss.Style
+	detailTextP   lipgloss.Style
 	detailMeta    lipgloss.Style
+	detailMetaP   lipgloss.Style
 	detailRail    lipgloss.Style
 	detailHunk    lipgloss.Style
 }
@@ -106,6 +113,17 @@ func defaultStyles() styles {
 		panelTitle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber),
+		panelSubtitle: lipgloss.NewStyle().
+			Foreground(muted).
+			Background(panel),
+		panelEmphasis: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(cyan).
+			Background(panel),
+		panelSection: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(amber).
+			Background(panel),
 		panel: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(panelEdge).
@@ -168,6 +186,9 @@ func defaultStyles() styles {
 			Background(selectedDescBG),
 		diffGutter: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#54657A")),
+		diffGutterP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#54657A")).
+			Background(panel),
 		diffHeader: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber).
@@ -180,6 +201,9 @@ func defaultStyles() styles {
 			Background(lipgloss.Color("#2A1017")),
 		diffContext: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#AAB8C8")),
+		diffContextP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#AAB8C8")).
+			Background(panel),
 		diffSelected: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ink).
@@ -188,8 +212,14 @@ func defaultStyles() styles {
 			Background(cyan),
 		detailText: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#F4F8FC")),
+		detailTextP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F4F8FC")).
+			Background(panel),
 		detailMeta: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#B8C7D8")),
+		detailMetaP: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B8C7D8")).
+			Background(panel),
 		detailRail: lipgloss.NewStyle().
 			Background(cyan),
 		detailHunk: lipgloss.NewStyle().

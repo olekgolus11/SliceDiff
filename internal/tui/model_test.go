@@ -99,6 +99,19 @@ func TestFillBlockPaintsBlankAndTrailingCells(t *testing.T) {
 	}
 }
 
+func TestWelcomeStatusTextUsesPanelBackground(t *testing.T) {
+	m := New(Options{Config: &config.Store{}})
+	m.reviewPRs = []github.PRSearchResult{{Title: "One"}}
+
+	rendered := m.renderWelcomeStatus(96)
+	if !strings.Contains(ansi.Strip(rendered), "Review requests assigned to you") {
+		t.Fatalf("expected welcome subtitle, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "48;2;13;23;38") {
+		t.Fatalf("expected panel background under welcome status text, got %q", rendered)
+	}
+}
+
 func TestNewWithTargetStartsLoading(t *testing.T) {
 	m := New(Options{Config: &config.Store{}, HasTarget: true, Target: github.Target{Owner: "owner", Repo: "repo", Number: 1}})
 
@@ -640,6 +653,30 @@ func TestStyledDiffLinesKeepDeletedBackgroundWithLanguageColor(t *testing.T) {
 	}
 }
 
+func TestDiffLinesUseWidthAwareBackgrounds(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+
+	added := m.renderDiffLine("main.go", diff.DiffLine{Type: diff.LineAdded, NewNumber: 7, Content: "func main() { return }"}, 42)
+	if width := lipgloss.Width(added); width != 42 {
+		t.Fatalf("expected added diff line width 42, got %d: %q", width, added)
+	}
+	if !strings.Contains(added, "48;2;12;42;27") {
+		t.Fatalf("expected added diff code area to keep green background, got %q", added)
+	}
+	if !strings.Contains(added, "48;2;13;23;38") {
+		t.Fatalf("expected added diff gutter to keep panel background, got %q", added)
+	}
+
+	context := m.renderDiffLine("main.go", diff.DiffLine{Type: diff.LineContext, OldNumber: 8, NewNumber: 8, Content: "unchanged"}, 42)
+	if width := lipgloss.Width(context); width != 42 {
+		t.Fatalf("expected context diff line width 42, got %d: %q", width, context)
+	}
+	if !strings.Contains(context, "48;2;13;23;38") {
+		t.Fatalf("expected context diff line to keep panel background, got %q", context)
+	}
+}
+
 func TestStyledDiffLinesCacheRenderedDiffLines(t *testing.T) {
 	m := testModel()
 	m.mode = modeRaw
@@ -827,7 +864,7 @@ func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
 	if !strings.Contains(rendered, m.style.detailHunk.Render("h1")) {
 		t.Fatalf("expected selected hunk badge in details, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, m.style.detailRail.Render(" ")) {
+	if !strings.Contains(rendered, m.style.detailRail.Render(fillCell)) {
 		t.Fatalf("expected selected rail marker in details, got:\n%s", rendered)
 	}
 	if lipgloss.Width(m.readingStepRefPrefix(true)) != lipgloss.Width(m.readingStepRefPrefix(false)) {
@@ -835,6 +872,28 @@ func TestGroupedDetailsSelectionHighlightsHunkReferenceOnly(t *testing.T) {
 	}
 	if lipgloss.Width(m.style.detailHunk.Render("h1")) != lipgloss.Width("h1") {
 		t.Fatal("expected selected hunk badge to keep the hunk id width stable")
+	}
+}
+
+func TestGroupedDetailsReadingRowsUsePanelBackground(t *testing.T) {
+	m := testModel()
+	m.mode = modeGrouped
+	m.selectedHunk = 0
+
+	lines, selectedLine := m.centerScrollStyledLines(58)
+	if selectedLine < 0 || selectedLine+1 >= len(lines) {
+		t.Fatalf("expected selected prose and ref lines, got selected=%d lines=%d", selectedLine, len(lines))
+	}
+	for _, line := range []string{lines[selectedLine], lines[selectedLine+1]} {
+		if width := lipgloss.Width(line); width != 58 {
+			t.Fatalf("expected filled reading row width 58, got %d: %q", width, line)
+		}
+		if !strings.Contains(line, "48;2;13;23;38") {
+			t.Fatalf("expected panel background under reading row, got %q", line)
+		}
+	}
+	if strings.Contains(lines[selectedLine], "48;2;53;213;255mFirst hunk") {
+		t.Fatalf("expected selected prose to avoid full cyan background, got %q", lines[selectedLine])
 	}
 }
 

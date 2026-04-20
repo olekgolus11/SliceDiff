@@ -143,13 +143,13 @@ func (m Model) renderWelcomeSearchRows(width, pickerWidth int) []string {
 func (m Model) renderWelcomeStatus(width int) string {
 	count := m.welcomeCountLabel()
 	countWidth := lipgloss.Width(count)
-	separator := "  /  "
+	separator := strings.Repeat(fillCell, 2) + "/" + strings.Repeat(fillCell, 2)
 	subtitleWidth := max(1, width-countWidth-ansi.StringWidth(separator))
 	subtitle := ansi.Truncate(m.welcomeSubtitle(), subtitleWidth, "...")
 	line := lipgloss.JoinHorizontal(lipgloss.Center,
-		m.style.panelTitle.Render(count),
-		m.style.subtle.Render(separator),
-		m.style.subtle.Render(subtitle),
+		m.style.panelSection.Render(count),
+		m.style.panelSubtitle.Render(separator),
+		m.style.panelSubtitle.Render(subtitle),
 	)
 	return line
 }
@@ -699,12 +699,12 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 			return append(prefix, m.callout("No selected slice."))
 		}
 		lines := append(prefix,
-			m.style.emphasis.Render(item.Title),
+			m.style.panelEmphasis.Render(item.Title),
 			m.renderBadges(item.Category),
 			"",
-			m.style.section.Render("Summary"),
+			m.style.panelSection.Render("Summary"),
 		)
-		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.detailText)...)
+		lines = append(lines, styledWrap(item.Summary, max(24, width), m.style.detailTextP)...)
 		return lines
 	}
 
@@ -714,14 +714,14 @@ func (m Model) centerOverviewStyledLines(width int) []string {
 	}
 	if file.IsBinary {
 		return append(prefix,
-			m.style.emphasis.Render(file.Path),
+			m.style.panelEmphasis.Render(file.Path),
 			m.renderBadges(file.Status, "binary"),
 			"",
 			m.callout("Binary files do not include line hunks in the unified diff."),
 		)
 	}
 	return append(prefix,
-		m.style.emphasis.Render(file.Path),
+		m.style.panelEmphasis.Render(file.Path),
 		m.renderBadges(file.Status, generatedLabel(file)),
 	)
 }
@@ -737,7 +737,7 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 		if item == nil {
 			return []string{m.callout("No selected slice.")}, -1, -1
 		}
-		lines := []string{"", m.style.section.Render("Reading order")}
+		lines := []string{"", padStyledLine(m.style.panelSection.Render("Reading order"), width, m.style.panelFill)}
 		selectedStart := -1
 		selectedEnd := -1
 		for i, step := range item.ReadingSteps {
@@ -760,7 +760,7 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 	if file.IsBinary {
 		return []string{m.callout("Binary files do not include line hunks in the unified diff.")}, -1, -1
 	}
-	lines := []string{m.style.section.Render("Hunks")}
+	lines := []string{padStyledLine(m.style.panelSection.Render("Hunks"), width, m.style.panelFill)}
 	if len(file.Hunks) == 0 {
 		lines = append(lines, m.callout("No text hunks available for this file."))
 		return lines, -1, -1
@@ -779,7 +779,7 @@ func (m Model) centerScrollStyledLineRange(width int) ([]string, int, int) {
 			line = padStyledLine(line, width, m.style.diffSelectedF)
 			selectedLine = len(lines)
 		} else {
-			line = m.style.diffContext.Render(line)
+			line = padStyledLine(m.style.diffContextP.Render(line), width, m.style.panelFill)
 		}
 		lines = append(lines, line)
 	}
@@ -790,35 +790,35 @@ func (m Model) renderReadingStepBody(body string, width int, selected bool) []st
 	prefix := m.readingStepPrefix(selected)
 	lines := wrapWords(body, max(1, width-lipgloss.Width(prefix)))
 	for i, line := range lines {
-		lines[i] = prefix + m.style.detailText.Render(line)
+		lines[i] = padStyledLine(prefix+m.style.detailTextP.Render(line), width, m.style.panelFill)
 	}
 	return lines
 }
 
 func (m Model) renderReadingStepRef(ref agent.HunkRef, width int, selected bool) string {
 	prefix := m.readingStepRefPrefix(selected)
-	hunk := ref.HunkID
-	separator := "  "
+	hunk := m.style.detailMetaP.Render(ref.HunkID)
+	separator := strings.Repeat(fillCell, 2)
 	if selected {
 		hunk = m.style.detailHunk.Render(ref.HunkID)
 	}
 	stemWidth := lipgloss.Width(prefix) + lipgloss.Width(hunk) + ansi.StringWidth(separator)
 	path := shortenPathAfterFirstSlash(ref.FilePath, max(1, width-stemWidth))
-	return prefix + hunk + separator + m.style.detailMeta.Render(path)
+	return padStyledLine(prefix+hunk+m.style.detailMetaP.Render(separator)+m.style.detailMetaP.Render(path), width, m.style.panelFill)
 }
 
 func (m Model) readingStepPrefix(selected bool) string {
 	if selected {
-		return m.style.detailRail.Render(" ") + " "
+		return m.style.detailRail.Render(fillCell) + m.style.panelFill.Render(fillCell)
 	}
-	return "  "
+	return m.style.panelFill.Render(strings.Repeat(fillCell, 2))
 }
 
 func (m Model) readingStepRefPrefix(selected bool) string {
 	if selected {
-		return m.style.detailRail.Render(" ") + "   "
+		return m.style.detailRail.Render(fillCell) + m.style.panelFill.Render(strings.Repeat(fillCell, 3))
 	}
-	return "    "
+	return m.style.panelFill.Render(strings.Repeat(fillCell, 4))
 }
 
 func (m Model) centerStyledLines() ([]string, int) {
@@ -892,7 +892,7 @@ func (m *Model) rightStyledLines() []string {
 	if hunk == nil {
 		if file := m.currentFile(); file != nil && file.IsBinary {
 			return []string{
-				m.style.emphasis.Render(file.Path),
+				m.style.panelEmphasis.Render(file.Path),
 				"",
 				m.callout("Binary file. No text hunk preview is available."),
 			}
@@ -904,7 +904,7 @@ func (m *Model) rightStyledLines() []string {
 		}
 	}
 	lines := []string{
-		m.style.emphasis.Render(hunk.FilePath),
+		m.style.panelEmphasis.Render(hunk.FilePath),
 		m.style.diffHeader.Render(hunk.Header),
 	}
 	if hunkSignal(*hunk) != diff.HunkSignalFocus {
@@ -912,13 +912,13 @@ func (m *Model) rightStyledLines() []string {
 	}
 	lines = append(lines, "")
 	for _, line := range hunk.Lines {
-		lines = append(lines, m.renderDiffLine(hunk.FilePath, line))
+		lines = append(lines, m.renderDiffLine(hunk.FilePath, line, m.rightViewport.Width()))
 	}
 	return lines
 }
 
-func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
-	cacheKey := diffLineCacheKey(filePath, line)
+func (m *Model) renderDiffLine(filePath string, line diff.DiffLine, width int) string {
+	cacheKey := diffLineCacheKey(filePath, line, width)
 	if cached, ok := m.diffLineCache[cacheKey]; ok {
 		return cached
 	}
@@ -926,21 +926,29 @@ func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 	oldNo := formatLineNumber(line.OldNumber)
 	newNo := formatLineNumber(line.NewNumber)
 	sign := " "
-	style := m.style.diffContext
+	style := m.style.diffContextP
+	fill := m.style.panelFill
 	switch line.Type {
 	case diff.LineAdded:
 		sign = "+"
 		style = m.style.diffAdded
+		fill = m.style.diffAdded
 	case diff.LineDeleted:
 		sign = "-"
 		style = m.style.diffDeleted
+		fill = m.style.diffDeleted
 	}
-	gutter := m.style.diffGutter.Render(fmt.Sprintf("%4s %4s ", oldNo, newNo))
+	gutterText := fmt.Sprintf("%4s %4s ", oldNo, newNo)
+	gutter := m.style.diffGutterP.Render(gutterText)
 	code, ok := highlightDiffCode(filePath, line.Content, style)
 	if !ok {
 		code = style.Render(line.Content)
 	}
 	body := style.Render(sign+" ") + code
+	if width > 0 {
+		bodyWidth := max(0, width-lipgloss.Width(gutterText))
+		body = padStyledLine(body, bodyWidth, fill)
+	}
 	rendered := gutter + body
 	if m.diffLineCache == nil {
 		m.diffLineCache = make(map[string]string)
@@ -949,8 +957,8 @@ func (m *Model) renderDiffLine(filePath string, line diff.DiffLine) string {
 	return rendered
 }
 
-func diffLineCacheKey(filePath string, line diff.DiffLine) string {
-	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, line.Content)
+func diffLineCacheKey(filePath string, line diff.DiffLine, width int) string {
+	return fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%d\x00%s", filePath, line.Type, line.OldNumber, line.NewNumber, width, line.Content)
 }
 
 func (m Model) selectedDiffHunk() *diff.DiffHunk {
