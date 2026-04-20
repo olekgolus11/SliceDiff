@@ -33,12 +33,14 @@ type styles struct {
 	panelFill     lipgloss.Style
 	footer        lipgloss.Style
 	footerFill    lipgloss.Style
+	footerSubtle  lipgloss.Style
 	status        lipgloss.Style
 	subtle        lipgloss.Style
 	emphasis      lipgloss.Style
 	section       lipgloss.Style
 	callout       lipgloss.Style
 	errorText     lipgloss.Style
+	errorTextP    lipgloss.Style
 	success       lipgloss.Style
 	warning       lipgloss.Style
 	navTitle      lipgloss.Style
@@ -93,9 +95,11 @@ func defaultStyles() styles {
 			Background(headerBG),
 		headerTitle: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ember),
+			Foreground(ember).
+			Background(headerBG),
 		headerMeta: lipgloss.NewStyle().
-			Foreground(muted),
+			Foreground(muted).
+			Background(headerBG),
 		chip: lipgloss.NewStyle().
 			Foreground(text).
 			Background(lipgloss.Color("#16253A")).
@@ -141,14 +145,19 @@ func defaultStyles() styles {
 			Background(footerBG),
 		footerFill: lipgloss.NewStyle().
 			Background(footerBG),
+		footerSubtle: lipgloss.NewStyle().
+			Foreground(muted).
+			Background(footerBG),
 		status: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(amber),
+			Foreground(amber).
+			Background(footerBG),
 		subtle: lipgloss.NewStyle().
 			Foreground(muted),
 		emphasis: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(cyan),
+			Foreground(cyan).
+			Background(headerBG),
 		section: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(amber),
@@ -161,6 +170,10 @@ func defaultStyles() styles {
 		errorText: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(red),
+		errorTextP: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(red).
+			Background(panel),
 		success: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(green),
@@ -168,9 +181,11 @@ func defaultStyles() styles {
 			Bold(true).
 			Foreground(amber),
 		navTitle: lipgloss.NewStyle().
-			Foreground(text),
+			Foreground(text).
+			Background(panel),
 		navDesc: lipgloss.NewStyle().
-			Foreground(muted),
+			Foreground(muted).
+			Background(panel),
 		navFill: lipgloss.NewStyle().
 			Background(panel),
 		navSelected: lipgloss.NewStyle().
@@ -326,12 +341,12 @@ func newHelp(style styles) help.Model {
 	model.ShortSeparator = " | "
 	model.FullSeparator = "   "
 	model.Styles.ShortKey = style.chipCool
-	model.Styles.ShortDesc = style.subtle
-	model.Styles.ShortSeparator = style.subtle
+	model.Styles.ShortDesc = style.footerSubtle
+	model.Styles.ShortSeparator = style.footerSubtle
 	model.Styles.FullKey = style.chipCool
-	model.Styles.FullDesc = style.subtle
-	model.Styles.FullSeparator = style.subtle
-	model.Styles.Ellipsis = style.subtle
+	model.Styles.FullDesc = style.footerSubtle
+	model.Styles.FullSeparator = style.footerSubtle
+	model.Styles.Ellipsis = style.footerSubtle
 	return model
 }
 

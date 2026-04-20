@@ -77,6 +77,74 @@ func TestPadStyledLineReplacesExistingTrailingSpaces(t *testing.T) {
 	}
 }
 
+func TestCenterStyledLineUsesStyledFillCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := centerStyledLine("Hi", 8, fill)
+	plain := ansi.Strip(got)
+
+	if plain != strings.Repeat(fillCell, 3)+"Hi"+strings.Repeat(fillCell, 3) {
+		t.Fatalf("expected centered fill cells around text, got %q", plain)
+	}
+	if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+		t.Fatalf("expected no raw edge spaces, got %q", plain)
+	}
+	if !strings.Contains(got, "48;2;18;52;86") {
+		t.Fatalf("expected styled fill cells, got %q", got)
+	}
+}
+
+func TestPlaceStyledBlockUsesStyledFillCells(t *testing.T) {
+	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
+	got := placeStyledBlock("Hi", 3, 8, fill)
+	lines := strings.Split(got, "\n")
+
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(lines))
+	}
+	for i, line := range lines {
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
+		}
+		if width := ansi.StringWidth(plain); width != 8 {
+			t.Fatalf("line %d expected width 8, got %d: %q", i, width, plain)
+		}
+		if !strings.Contains(line, "48;2;18;52;86") {
+			t.Fatalf("line %d expected styled fill cells, got %q", i, line)
+		}
+	}
+}
+
+func TestFillLineReplacesExistingTrailingSpaces(t *testing.T) {
+	got := fillLine("Hi    ", 6)
+
+	if got != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", got)
+	}
+}
+
+func TestFitPlainLineReplacesExistingTrailingSpaces(t *testing.T) {
+	got := fitPlainLine("Hi    ", 6)
+
+	if got != "Hi"+strings.Repeat(fillCell, 4) {
+		t.Fatalf("expected existing trailing spaces to become fill cells, got %q", got)
+	}
+}
+
+func TestHorizontalArtUsesFillCellsForPadding(t *testing.T) {
+	lines := horizontalArt([]string{"x"}, []string{"yz"})
+
+	if len(lines) != 1 {
+		t.Fatalf("expected one art row, got %d", len(lines))
+	}
+	if strings.Contains(lines[0], "  ") {
+		t.Fatalf("expected art padding to use fill cells, got %q", lines[0])
+	}
+	if !strings.Contains(lines[0], fillCell) {
+		t.Fatalf("expected art padding to contain fill cells, got %q", lines[0])
+	}
+}
+
 func TestFillBlockPaintsBlankAndTrailingCells(t *testing.T) {
 	fill := lipgloss.NewStyle().Background(lipgloss.Color("#123456"))
 	content := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Render("One") + "\n\n" + strings.Repeat("x", 12)
@@ -518,6 +586,10 @@ func TestLoadingFrameUsesFullTerminal(t *testing.T) {
 		if got := lipgloss.Width(line); got != m.width {
 			t.Fatalf("line %d expected width %d, got %d: %q", i, m.width, got, line)
 		}
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
+		}
 	}
 }
 
@@ -674,6 +746,32 @@ func TestDiffLinesUseWidthAwareBackgrounds(t *testing.T) {
 	}
 	if !strings.Contains(context, "48;2;13;23;38") {
 		t.Fatalf("expected context diff line to keep panel background, got %q", context)
+	}
+}
+
+func TestRightHunkHeaderRowsUseFullWidthBackgrounds(t *testing.T) {
+	m := testModel()
+	m.mode = modeRaw
+	m.rightViewport.SetWidth(42)
+
+	lines := m.rightStyledLines()
+	if len(lines) < 2 {
+		t.Fatalf("expected file and hunk header rows, got %d", len(lines))
+	}
+	for i, line := range lines[:2] {
+		if width := lipgloss.Width(line); width != 42 {
+			t.Fatalf("line %d expected width 42, got %d: %q", i, width, line)
+		}
+		plain := ansi.Strip(line)
+		if strings.HasPrefix(plain, " ") || strings.HasSuffix(plain, " ") {
+			t.Fatalf("line %d expected no raw edge spaces, got %q", i, plain)
+		}
+	}
+	if !strings.Contains(lines[0], "48;2;13;23;38") {
+		t.Fatalf("expected panel background on file row, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "48;2;31;38;53") {
+		t.Fatalf("expected hunk header background across row, got %q", lines[1])
 	}
 }
 
