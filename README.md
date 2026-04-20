@@ -1,10 +1,16 @@
 # SliceDiff
 
+<img width="986" height="208" alt="image" src="https://github.com/user-attachments/assets/3607fd70-38b6-4e2a-8f93-a4202c227a64" />
+
+
 SliceDiff is a local terminal UI for understanding large GitHub pull requests by turning raw file-by-file diffs into reviewable slices while keeping every grouped hunk traceable back to the original diff.
 
 ## Current State
 
 SliceDiff is an active prototype that is usable locally today. It is built for reviewers who already have a large pull request in front of them and want a faster way to understand how related edits fit together.
+
+<img width="1466" height="923" alt="image" src="https://github.com/user-attachments/assets/8f724daa-85d0-4345-bb7c-935265ed1450" />
+
 
 This is not a GitHub review bot, not a production collaboration platform, and not a replacement for GitHub as the final place where review decisions happen. The current focus is local navigation, understanding, and experimentation with semantic diff grouping.
 
