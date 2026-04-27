@@ -102,8 +102,9 @@ func TestListOpenPRsAddsRepoToTargetsWhenGhOmitsRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListOpenPRs returned error: %v", err)
 	}
-	if !strings.Contains(strings.Join(gotArgs, " "), "--repo owner/repo") {
-		t.Fatalf("expected repo arg in %v", gotArgs)
+	wantArgs := []string{"pr", "list", "--repo", "owner/repo", "--state", "open", "--json", "number,title,url,updatedAt,author,isDraft", "-L", "50"}
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("unexpected args:\n got %v\nwant %v", gotArgs, wantArgs)
 	}
 	if len(results) != 1 || results[0].RepoName() != "owner/repo" || results[0].Target().Raw != "owner/repo#7" {
 		t.Fatalf("unexpected results: %+v", results)

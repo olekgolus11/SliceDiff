@@ -89,11 +89,9 @@ func (c Client) ListOpenPRs(ctx context.Context, ownerRepo string) ([]PRSearchRe
 		return nil, fmt.Errorf("repository is required")
 	}
 	args := []string{
-		"search", "prs",
+		"pr", "list",
 		"--repo", ownerRepo,
-		"--state=open",
-		"--sort=updated",
-		"--order=desc",
+		"--state", "open",
 		"--json", "number,title,url,updatedAt,author,isDraft",
 		"-L", "50",
 	}
